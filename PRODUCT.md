@@ -8,12 +8,12 @@ web
 
 ## Stack
 
-Delegated implementation within the user's request for a useful new CRM.
+Implementation explicitly delegated by the user after confirming this CRM scope.
 Django, server-rendered HTML and SQLite provide a small self-hosted baseline.
 
 ## Users
 
-Initial assumption: individuals and small businesses following contacts,
+Confirmed initial audience: individuals and small businesses following contacts,
 sales opportunities and next actions. The owner has left the specific business
 vertical open; no industry-specific workflows are claimed.
 
