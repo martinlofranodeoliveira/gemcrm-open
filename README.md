@@ -7,6 +7,10 @@ and follow-up tasks. New code, independent of any private GemCRM application.
 early version for local use and evaluation; review deployment security before
 putting it on the internet.
 
+![GemCRM Open dashboard with fictional demonstration records](docs/screenshots/dashboard.png)
+
+The screenshot uses fictional records from `seed_demo`, not customer data.
+
 ## What works
 
 - Account creation, login and logout.

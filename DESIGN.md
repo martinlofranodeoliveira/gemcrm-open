@@ -20,23 +20,23 @@ colors:
   success-text: "#245541"
 typography:
   headline:
-    fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'
+    fontFamily: '"Segoe UI", system-ui, sans-serif'
     fontSize: "1.9rem"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "-0.03em"
   title:
-    fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'
+    fontFamily: '"Segoe UI", system-ui, sans-serif'
     fontSize: "1.12rem"
     fontWeight: 650
     lineHeight: 1.4
   body:
-    fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'
+    fontFamily: '"Segoe UI", system-ui, sans-serif'
     fontSize: "15px"
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif'
+    fontFamily: '"Segoe UI", system-ui, sans-serif'
     fontSize: "0.88rem"
     fontWeight: 600
 rounded:
@@ -132,7 +132,7 @@ The blue `focus` token distinguishes keyboard focus from selection and status.
 
 ## Typography
 
-All roles use the same declared stack: Inter, Segoe UI, system UI, sans-serif.
+All roles use the same declared stack: Segoe UI, system UI, sans-serif.
 There is no bundled font asset or remote font request in the current base
 template; installed fonts determine the available face.
 
