@@ -1,0 +1,14 @@
+{% load static %}<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}GemCRM Open{% endblock %}</title><link rel="stylesheet" href="{% static 'crm/app.css' %}"></head>
+<body><a class="skip" href="#content">Pular para o conteúdo</a>
+{% if user.is_authenticated %}<div class="workspace"><aside class="sidebar"><a class="brand" href="{% url 'crm:dashboard' %}"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 11 11 4h10l6 7-11 17Z M5 11h22M11 4l5 24 5-24"/></svg><span>GemCRM <small>Open</small></span></a><nav aria-label="Navegação principal">
+{% with active=request.resolver_match.url_name %}
+<a href="{% url 'crm:dashboard' %}" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Visão geral</a>
+<a href="{% url 'crm:contacts' %}" {% if 'contact' in active %}aria-current="page"{% endif %}>Contatos</a>
+<a href="{% url 'crm:companies' %}" {% if 'compan' in active %}aria-current="page"{% endif %}>Empresas</a>
+<a href="{% url 'crm:deals' %}" {% if 'deal' in active %}aria-current="page"{% endif %}>Oportunidades</a>
+<a href="{% url 'crm:tasks' %}" {% if 'task' in active %}aria-current="page"{% endif %}>Tarefas</a>{% endwith %}</nav>
+<div class="sidebar-bottom"><p class="account">{{ user.username }}</p><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="logout" type="submit">Sair da conta</button></form><a class="source" href="https://github.com/martinlofranodeoliveira/gemcrm-open">Código aberto · MIT ↗</a></div></aside><div class="main"><header class="workspace-header"><span>Seu espaço de trabalho</span><span class="private-label">Dados da sua conta</span></header>
+{% else %}<div class="auth-wrap"><a class="brand auth-brand" href="/">GemCRM <small>Open</small></a>{% endif %}
+<main id="content" tabindex="-1">{% if messages %}<div class="messages" aria-live="polite">{% for message in messages %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}{% block content %}{% endblock %}</main>
+{% if user.is_authenticated %}<footer class="page-footer">GemCRM Open · Um próximo passo para cada oportunidade.</footer></div></div>{% else %}</div>{% endif %}</body></html>

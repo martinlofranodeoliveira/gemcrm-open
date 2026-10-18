@@ -1,0 +1,10 @@
+[project]
+name = "gemcrm-open"
+version = "0.1.0"
+description = "An open-source, self-hosted CRM for independent teams."
+requires-python = ">=3.12"
+dependencies = ["Django==5.2.18"]
+license = "MIT"
+
+[tool.uv]
+package = false
