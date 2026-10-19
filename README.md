@@ -15,6 +15,7 @@ The screenshot uses fictional records from `seed_demo`, not customer data.
 
 - Account creation, login and logout.
 - Companies and contacts, with search and CSV export.
+- Contact CSV upload, preview and explicit, all-or-nothing confirmation.
 - A five-stage sales pipeline and opportunity values.
 - Follow-up tasks and a dashboard with open opportunities and due actions.
 - Per-account record isolation, CSRF protection and spreadsheet-safe CSV cells.
@@ -54,7 +55,68 @@ uv run python manage.py test
 ```
 
 Tests cover authentication, record ownership, foreign-key isolation, CSRF,
-stage changes, CSV injection, escaping and related-record preservation.
+stage changes, CSV injection, escaping, import validation, replay protection,
+transaction rollback and related-record preservation.
+
+## Import contacts from CSV
+
+Open **Contatos → Importar CSV**, select a UTF-8 file and review the preview.
+Uploading never creates contacts. Correct every listed error or duplicate, then
+choose **Importar contatos** to save the complete batch. Sending another file
+replaces the previous preview, even when the replacement is invalid.
+
+```csv
+name,email,phone,company,notes
+Example contact,example@example.com,,,Fictional example
+```
+
+- `name` is required; `email`, `phone`, `company` and `notes` are optional.
+  A UTF-8 BOM is accepted. Use commas as separators and quote values containing
+  commas. Each accepted file is limited to 256 KiB and 500 contacts.
+- Companies must already exist under one unambiguous, exact name in your account.
+  The importer never creates companies or looks up another account's records.
+- Emails repeated in the file or your existing contacts block the entire batch.
+  Matching uses the policy described below. Blank emails are allowed. This does
+  not merge or update records, or impose global email uniqueness on manual edits.
+- Confirmation is valid for 15 minutes and rechecks current database records.
+  The batch and a durable replay receipt are saved in one transaction. A second
+  confirmation cannot import the same preview, including after an overlapping
+  login response restores an old session. A separate canonical preview state
+  also rejects old previews after another upload, including invalid replacements.
+  If an overlapping session save loses the latest CSV, the importer fails closed
+  and asks you to upload it again. A failed transaction saves no contacts
+  or receipt, allowing a retry while the preview remains valid. SQLite write
+  contention can require a retry; imports serialize per account on databases
+  supporting row locks.
+- The current checks support up to 20,000 existing contacts and matching company
+  records per account. Larger or inconsistent data sets fail closed for review.
+
+The workflow requires Django's database session backend. The uploaded CSV stays
+in the server-side session, never a signed-cookie session or hidden form field.
+The 15-minute confirmation window is **not** an automatic data deletion timer:
+drafts follow the session's retention unless replaced, consumed or logged out.
+Treat session storage and database backups as private contact data.
+
+After updating an existing installation, apply migrations before serving traffic:
+
+```sh
+uv run python manage.py migrate
+```
+
+For maintenance, remove expired sessions and replay receipts with:
+
+```sh
+uv run python manage.py clearsessions
+uv run python manage.py purge_contact_import_receipts
+```
+
+The cleanup removes only expired receipts and preview states; it does not touch
+contacts or active previews. These records contain hashed nonce/session
+identifiers, timestamps, state and the owner, not uploaded CSV. Configure an
+appropriate maintenance schedule for your install.
+The accepted file limit does not replace a reverse-proxy HTTP request-body limit.
+See the [workflow design notes](docs/design/contact-import.md) for interface states,
+accessibility behavior and validation scope.
 
 ## Preview imported contacts in Python
 
@@ -92,8 +154,8 @@ integers, excluding booleans.
 
 These helpers query no database and do not verify ownership: the caller must
 filter existing emails to the current account. They neither create, merge nor
-update contacts. An import screen, confirmation flow and transactional checks
-when saving remain future work.
+update contacts themselves. The import screen composes them with owner-scoped
+lookups and transactional checks when saving.
 
 ## Deployment and data
 
@@ -105,7 +167,7 @@ variables; it is not automatically loaded. Run `manage.py check --deploy` agains
 your deployment configuration and review its findings.
 
 Each account sees its own records. Team sharing, password-reset email, audit
-logs, import UI and integrations are future work, not current capabilities.
+logs and integrations are future work, not current capabilities.
 
 ## Contribute
 

@@ -102,3 +102,34 @@ class Task(OwnedRecord):
     def clean(self):
         super().clean()
         self.validate_related_owners("deal")
+
+
+class ContactImportReceipt(models.Model):
+    """Durable replay protection, independent of the mutable login session.
+
+    No uploaded contacts, raw tokens, or raw session keys are stored here.
+    Keep receipts until their original preview has expired; the cleanup command
+    removes only expired receipts and never changes the login session.
+    """
+
+    nonce_digest = models.CharField(max_length=64, unique=True)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    session_digest = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+
+class ContactImportState(models.Model):
+    """Canonical current preview, separate from overwritable session contents."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    session_digest = models.CharField(max_length=64)
+    nonce_digest = models.CharField(max_length=64)
+    ready = models.BooleanField(default=False)
+    issued_at = models.DateTimeField()
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "session_digest"], name="contact_import_owner_session_unique"),
+        ]

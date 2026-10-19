@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Importar contatos · GemCRM Open{% endblock %}
+{% block surface_contract %}<!--
+THESIS: Review the complete contact batch before one explicit write; no immediate import on upload.
+OWN-WORLD: Existing teal navigation, emerald actions, system typography, native fields and bordered tables.
+STORY: Choose a CSV, inspect contacts and conflicts, then confirm the validated batch.
+FIRST VIEWPORT: Back link and task heading, three-step sequence, upload instructions or the preview status and table. One primary action per stage.
+FORM: Operate-mode extension of Contacts; the established visual identity and composition guide this precise workflow, without a new concept draw. Signature interaction: server-rendered preview followed by explicit confirmation. Native details reveal notes; no decorative motion.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->{% endblock %}
+{% block content %}
+<div class="page-heading"><div><a class="back" href="{{ back_url }}">Voltar para contatos</a><h1>Importar contatos</h1><p>Revise o arquivo antes de adicionar os contatos à sua conta.</p></div></div>
+<ol class="import-steps" aria-label="Etapas da importação">
+  <li {% if not preview %}aria-current="step"{% endif %}><span>1</span>Escolher arquivo</li>
+  <li {% if preview %}aria-current="step"{% endif %}><span>2</span>Revisar contatos</li>
+  <li><span>3</span>Confirmar importação</li>
+</ol>
+
+{% if confirm_error %}<div class="error-summary import-alert" role="alert"><h2>A importação não foi concluída</h2><p>{{ confirm_error }}</p></div>{% endif %}
+
+{% if preview %}
+<section class="import-review" aria-labelledby="preview-heading">
+  <div class="import-review-heading"><div><h2 id="preview-heading">Prévia da importação</h2><p>{{ preview.rows|length }} linha{{ preview.rows|length|pluralize:'s' }} na prévia. Nenhum contato foi salvo.</p></div><span class="import-state {% if not preview.valid %}import-state-error{% endif %}">{% if preview.valid %}Pronta para confirmar{% else %}Precisa de ajustes{% endif %}</span></div>
+  {% if preview.errors or preview.duplicates %}
+  <div class="import-issues" role="alert"><h3 id="import-issues-heading">Corrija o CSV e envie novamente</h3><div class="import-issues-list" role="region" aria-labelledby="import-issues-heading" tabindex="0"><ul>
+    {% for error in preview.errors %}<li>Linha {{ error.line }}: {{ error.message }}</li>{% endfor %}
+    {% for item in preview.duplicates %}<li>Linha {{ item.line }}: {{ item.email }} {% if item.existing %}já está nos contatos da sua conta{% else %}repete o e-mail da linha {{ item.previous_line }}{% endif %}.</li>{% endfor %}
+  </ul></div><p>O lote inteiro precisa passar na validação. Contatos existentes não serão alterados.</p></div>
+  {% endif %}
+  {% if preview.rows %}
+  <p class="import-table-help" id="preview-help">Confira os dados abaixo. Em telas menores, role a tabela para ver as demais colunas.</p>
+  <div class="table-wrap import-table-region" role="region" aria-label="Contatos lidos do CSV" aria-describedby="preview-help" tabindex="0"><table class="import-table"><caption class="sr-only">Prévia dos contatos, antes de qualquer gravação</caption><thead><tr><th scope="col">Linha</th><th scope="col">Contato</th><th scope="col">Telefone</th><th scope="col">Empresa</th><th scope="col">Observações</th></tr></thead><tbody>
+    {% for row in preview.rows %}<tr {% if row.line in preview.duplicate_lines %}class="import-duplicate"{% endif %}><th scope="row">{{ row.line }}</th><td><strong>{{ row.name }}</strong><span class="import-cell-detail">{{ row.email|default:'Sem e-mail' }}</span>{% if row.line in preview.duplicate_lines %}<span class="import-duplicate-label">E-mail duplicado</span>{% endif %}</td><td>{{ row.phone|default:'—' }}</td><td>{{ row.company|default:'Sem empresa' }}</td><td>{% if row.notes %}<details class="import-notes"><summary>Ver observações<span class="sr-only"> da linha {{ row.line }}: {{ row.name }}</span></summary><p>{{ row.notes }}</p></details>{% else %}—{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+  {% if preview.valid and preview_token %}
+  <form class="import-confirm" action="{% url 'crm:contact_import_confirm' %}" method="post">{% csrf_token %}<input type="hidden" name="preview_token" value="{{ preview_token }}"><div><h3>Adicionar à sua conta?</h3><p>A prévia vale por {{ preview_minutes }} minutos. Os dados serão verificados novamente ao confirmar.</p></div><div class="form-actions"><button class="button" type="submit">Importar {{ preview.rows|length }} contato{{ preview.rows|length|pluralize:'s' }}</button><a class="button secondary" href="{{ back_url }}">Voltar sem importar</a></div></form>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="import-layout {% if preview %}import-another{% endif %}">
+  <section class="import-upload" aria-labelledby="upload-heading"><h2 id="upload-heading">{% if preview %}Enviar outro arquivo{% else %}Escolha o arquivo CSV{% endif %}</h2><p>{% if preview %}Um novo envio substitui a prévia anterior.{% else %}Use uma linha por contato e separe as colunas com vírgulas.{% endif %}</p>
+    <form action="{% url 'crm:contact_import' %}" method="post" enctype="multipart/form-data">{% csrf_token %}{% include 'crm/fields.html' %}<div class="form-actions"><button class="button {% if preview.valid %}secondary{% endif %}" type="submit">Revisar arquivo</button>{% if not preview %}<a href="{{ back_url }}">Cancelar</a>{% endif %}</div></form>
+  </section>
+  <aside class="import-guidance" aria-labelledby="format-heading"><h2 id="format-heading">Como preparar o arquivo</h2><ul><li>Até {{ max_rows }} contatos e 256 KiB, em UTF-8.</li><li><code>name</code> é obrigatório. E-mail, telefone, empresa e observações são opcionais.</li><li>Empresas devem existir na sua conta com o mesmo nome. A importação não cria empresas.</li><li>E-mails repetidos no arquivo ou nos seus contatos precisam ser corrigidos.</li></ul><details class="import-format"><summary>Ver cabeçalho e exemplo</summary><p>Use estes nomes de coluna em inglês. O exemplo é fictício.</p><pre><code>name,email,phone,company,notes
+Contato exemplo,contato@example.com,,,Primeiro contato</code></pre><p>Coloque valores com vírgula entre aspas. E-mails em branco são permitidos.</p></details></aside>
+</div>
+{% endblock %}

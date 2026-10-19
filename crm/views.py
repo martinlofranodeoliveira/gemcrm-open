@@ -4,14 +4,19 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.db import DatabaseError
 from django.db.models import Q, Sum
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
-from .forms import CompanyForm, ContactForm, DealForm, SignupForm, TaskForm
+from .contact_import_workflow import (
+    DRAFT_SESSION_KEY, MAX_ROWS, PREVIEW_SECONDS, ImportRejected, PreviewUnavailable,
+    begin_preview, confirm_contacts, database_sessions_enabled, preview_contacts, save_preview,
+)
+from .forms import CONTACT_IMPORT_MAX_BYTES, CompanyForm, ContactForm, ContactImportUploadForm, DealForm, SignupForm, TaskForm
 from .models import Company, Contact, Deal, Task
 
 
@@ -56,6 +61,83 @@ def contacts(request):
     q = request.GET.get("q", "").strip()[:200]
     items = _contacts_for_search(request.user, q)
     return render(request, "crm/contacts.html", {"items": items, "q": q})
+
+
+def _render_contact_import(request, form=None, *, status=200, **context):
+    return render(request, "crm/contact_import.html", {
+        "form": form if form is not None else ContactImportUploadForm(),
+        "preview": None,
+        "preview_token": None,
+        "confirm_error": "",
+        "max_bytes": CONTACT_IMPORT_MAX_BYTES,
+        "max_rows": MAX_ROWS,
+        "preview_minutes": PREVIEW_SECONDS // 60,
+        "back_url": reverse("crm:contacts"),
+        **context,
+    }, status=status)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def contact_import(request):
+    if request.method == "GET":
+        return _render_contact_import(request)
+    # A new attempt always invalidates the preceding preview, even if invalid.
+    request.session.pop(DRAFT_SESSION_KEY, None)
+    if not database_sessions_enabled():
+        form = ContactImportUploadForm(data={})
+        form.add_error(None, "A importação requer sessões armazenadas no servidor pelo banco de dados.")
+        return _render_contact_import(request, form)
+    try:
+        attempt_token = begin_preview(request.session, request.user)
+    except DatabaseError:
+        return _render_contact_import(request, confirm_error="Não foi possível iniciar a prévia. Tente novamente.")
+    form = ContactImportUploadForm(request.POST, request.FILES)
+    if (
+        set(request.POST) - {"csrfmiddlewaretoken"}
+        or set(request.FILES) - {"csv_file"}
+        or len(request.FILES.getlist("csv_file")) != 1
+    ):
+        form.add_error(None, "Envie somente um arquivo CSV pelo formulário de importação.")
+        return _render_contact_import(request, form)
+    if not form.is_valid():
+        return _render_contact_import(request, form)
+    text = form.cleaned_data["csv_file"]
+    try:
+        preview = preview_contacts(request.user, text)
+    except DatabaseError:
+        return _render_contact_import(request, form, confirm_error="Não foi possível validar o cadastro agora. Tente novamente.")
+    try:
+        token = save_preview(request.session, request.user, text, attempt_token=attempt_token) if preview["valid"] else None
+    except (PreviewUnavailable, DatabaseError):
+        return _render_contact_import(
+            request, form, preview=preview,
+            confirm_error="Outro envio substituiu esta prévia ou o cadastro está ocupado. Envie o arquivo novamente.",
+        )
+    return _render_contact_import(request, form, preview=preview, preview_token=token)
+
+
+@login_required
+@require_POST
+def contact_import_confirm(request):
+    allowed_fields = {"csrfmiddlewaretoken", "preview_token"}
+    if request.FILES or set(request.POST) - allowed_fields or len(request.POST.getlist("preview_token")) != 1:
+        return _render_contact_import(request, status=400, confirm_error="Confirmação inválida. Envie o arquivo novamente.")
+    try:
+        count = confirm_contacts(request.session, request.user, request.POST["preview_token"])
+    except PreviewUnavailable:
+        return _render_contact_import(request, confirm_error="A prévia expirou ou já foi usada. Envie o arquivo novamente.")
+    except ImportRejected as error:
+        return _render_contact_import(
+            request, preview=error.preview,
+            confirm_error="O cadastro mudou ou há dados inválidos. Revise a prévia e envie o arquivo novamente.",
+        )
+    except DatabaseError:
+        return _render_contact_import(
+            request, confirm_error="A importação não foi salva. Nenhum contato deste lote foi criado. Tente novamente.",
+        )
+    messages.success(request, f"Importação concluída: {count} contato(s) criado(s).")
+    return redirect("crm:contacts")
 
 
 def _contacts_for_search(owner, q):

@@ -32,8 +32,8 @@ project code, customer data or configuration is an input to this project.
 ## Capabilities and Constraints
 
 Contacts, companies, sales stages, follow-up tasks, search, dashboard and contact
-CSV export form the initial scope. MIT-licensed code; no proprietary services are
-required. This is an early version, not a claim of production readiness.
+CSV export and reviewed, transactional contact CSV import form the current scope.
+MIT-licensed code; no proprietary services are required. This is an early version, not a claim of production readiness.
 
 ## Evidence on Hand
 

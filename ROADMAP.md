@@ -3,9 +3,14 @@
 The first version covers contacts, companies, a sales pipeline and follow-up
 tasks for an individual user. Further work should solve observable problems.
 
+## Completed workflows
+
+- Contact CSV upload, owner-scoped preview, duplicate detection and explicit
+  transactional confirmation with durable replay protection. Includes validation
+  limits, rollback/retry tests and receipt cleanup documentation.
+
 ## Next useful improvements
 
-- Complete the contact-import workflow: pure CSV validation and email-duplicate detection helpers are available. The preview/confirmation UI, owner-scoped database lookup and transactional record creation remain pending.
 - Task filters for overdue, today, upcoming and completed work.
 - Search that preserves filters while moving through paginated lists.
 - Activity history on a contact and its linked opportunities.

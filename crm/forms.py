@@ -4,6 +4,29 @@ from django.contrib.auth.forms import UserCreationForm
 from .models import Company, Contact, Deal, Task
 
 
+CONTACT_IMPORT_MAX_BYTES = 256 * 1024
+
+
+class ContactImportUploadForm(forms.Form):
+    csv_file = forms.FileField(
+        label="Arquivo CSV",
+        help_text="UTF-8, até 256 KiB e 500 contatos. Nenhum contato é salvo na prévia.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".csv,text/csv"}),
+    )
+
+    def clean_csv_file(self):
+        uploaded = self.cleaned_data["csv_file"]
+        if uploaded.size > CONTACT_IMPORT_MAX_BYTES:
+            raise forms.ValidationError("O arquivo deve ter no máximo 256 KiB.")
+        content = uploaded.read(CONTACT_IMPORT_MAX_BYTES + 1)
+        if len(content) > CONTACT_IMPORT_MAX_BYTES:
+            raise forms.ValidationError("O arquivo deve ter no máximo 256 KiB.")
+        try:
+            return content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            raise forms.ValidationError("Envie um arquivo CSV codificado em UTF-8.") from None
+
+
 class SignupForm(UserCreationForm):
     email = forms.EmailField(label="E-mail", required=False)
 
