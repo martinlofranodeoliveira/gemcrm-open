@@ -5,7 +5,7 @@ tasks for an individual user. Further work should solve observable problems.
 
 ## Next useful improvements
 
-- Contact import with a preview, row-level validation and duplicate detection.
+- Complete the contact-import workflow: pure CSV validation and email-duplicate detection helpers are available. The preview/confirmation UI, owner-scoped database lookup and transactional record creation remain pending.
 - Task filters for overdue, today, upcoming and completed work.
 - Search that preserves filters while moving through paginated lists.
 - Activity history on a contact and its linked opportunities.

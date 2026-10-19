@@ -56,6 +56,45 @@ uv run python manage.py test
 Tests cover authentication, record ownership, foreign-key isolation, CSRF,
 stage changes, CSV injection, escaping and related-record preservation.
 
+## Preview imported contacts in Python
+
+Two pure helpers support callers building an import workflow. `parse_contacts`
+validates CSV text without writing records. `detect_duplicate_emails` flags
+emails already supplied by the caller or repeated in the accepted preview:
+
+```python
+from crm.contact_import import parse_contacts
+from crm.contact_duplicates import detect_duplicate_emails
+
+preview = parse_contacts("name,email\nExample,example@example.com\n")
+if preview["valid"]:
+    # Supply only email addresses belonging to the current account.
+    existing_emails = ["example@example.com"]  # fictional example
+    duplicates = detect_duplicate_emails(preview["rows"], existing_emails)
+    print(duplicates)
+    # [{"line": 2, "email": "example@example.com",
+    #   "existing": True, "previous_line": None}]
+```
+
+Duplicate matching trims surrounding whitespace and applies `casefold()` to
+emails. Blank emails are ignored; dots, plus suffixes and provider-specific
+aliases are preserved. This is an explicit CRM matching policy, not a test of
+mail delivery or proof that two addresses belong to one person. Each conflict
+contains exactly `line`, normalized `email`, `existing`, and `previous_line`;
+the last field references the first earlier matching import row, when present.
+Results retain input order and do not modify either input.
+
+The helper accepts lists, validates addresses and unique integer row lines
+starting at 2, and raises `ValueError` for malformed inputs. Defaults are
+`max_rows=500` and `max_existing=20000`, independently inclusive; larger lists
+are rejected, including blank or repeated entries. Both limits must be positive
+integers, excluding booleans.
+
+These helpers query no database and do not verify ownership: the caller must
+filter existing emails to the current account. They neither create, merge nor
+update contacts. An import screen, confirmation flow and transactional checks
+when saving remain future work.
+
 ## Deployment and data
 
 The development server is not a production server. Production requires a WSGI
