@@ -214,3 +214,261 @@ logs and integrations are future work, not current capabilities.
 See [ROADMAP.md](ROADMAP.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 AI-assisted work must meet the same tests and privacy requirements. One complete,
 useful change belongs in one commit; no empty or artificial activity.
+
+
+<!-- community-core:pipeline-forecast-filter -->
+### Pipeline forecast filter and totals core
+
+Lets the Portuguese self-hosted CRM build the documented pipeline-by-forecast report from pure JSON without database or clock reads. It mirrors /reports/pipeline/ filtering: empty start/end keeps null forecasts, any bound keeps only inclusive in-range dates, invalid bounds are rejected for 400 handling, and per-stage plus grand totals are formatted as R$ 1234,50 for HTML and 1234.50 for CSV with no thousand separator. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/pipeline_forecast_filter.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional keys: deals (list, default []), start (str or None, default None), end (str or None, default None). Each deal must be an object with pk int (booleans rejected), title str, stage str one of new, qualified, proposal, won, lost, value str matching ^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$ with total cents <=99999999999999, expected_close str or None; extra keys ignored. Missing/None/empty-string start/end means unbounded; otherwise must be YYYY-MM-DD valid calendar date else ValueError. If both bounded and start>end raise ValueError. Deals longer than 5000 raise ValueError. Titles must be str else ValueError. Expected_close None/missing/"" means null; otherwise must be YYYY-MM-DD valid calendar date else ValueError. Steps: 1) Normalize start/end to None when missing/None/"" else validated string. 2) Convert each value to integer cents ("100"->10000, "100.5"->10050, "100.05"->10005) without float. 3) Filter in input order: when both bounds None keep all including null; otherwise keep only non-null dates with (start is None or d>=start) and (end is None or d<=end) lexicographically equal to chronological for YYYY-MM-DD. 4) Build results list copying pk,title,stage, expected_close (None for null), value_cents int, value_csv "1234.50" exactly two decimals no thousand separator, value_display "R$ 1234,50" exactly two decimals comma decimal no thousand separator. 5) Aggregate by_stage in fixed order new,qualified,proposal,won,lost each as {count int, total_cents int, total_csv str, total_display str} with zero as "0.00"/"R$ 0,00", plus grand {count,total_cents,total_csv,total_display}. Returns dict with start, end (normalized None or string), total_count int, results list, by_stage object, grand object. Raises ValueError on malformed types or dates. Caller must pre-filter deals to current account and map ValueError to 400 with no table/CSV; function does no ownership check, DB query, CSV file handling, or clock read and never mutates inputs. Totals reflect current stage/value snapshot, not history, realized revenue, conversion, or future guarantee.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "expected_close": null,
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria",
+        "value": "100.00"
+      },
+      {
+        "expected_close": "2026-03-10",
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado",
+        "value": "234.50"
+      }
+    ]
+  },
+  "output": {
+    "by_stage": {
+      "lost": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 1,
+        "total_cents": 10000,
+        "total_csv": "100.00",
+        "total_display": "R$ 100,00"
+      },
+      "proposal": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "qualified": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 1,
+        "total_cents": 23450,
+        "total_csv": "234.50",
+        "total_display": "R$ 234,50"
+      }
+    },
+    "end": null,
+    "grand": {
+      "count": 2,
+      "total_cents": 33450,
+      "total_csv": "334.50",
+      "total_display": "R$ 334,50"
+    },
+    "results": [
+      {
+        "expected_close": null,
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria",
+        "value_cents": 10000,
+        "value_csv": "100.00",
+        "value_display": "R$ 100,00"
+      },
+      {
+        "expected_close": "2026-03-10",
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado",
+        "value_cents": 23450,
+        "value_csv": "234.50",
+        "value_display": "R$ 234,50"
+      }
+    ],
+    "start": null,
+    "total_count": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "expected_close": null,
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria",
+        "value": "100.00"
+      },
+      {
+        "expected_close": "2026-03-10",
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado",
+        "value": "234.50"
+      }
+    ],
+    "end": "2026-03-31",
+    "start": "2026-03-01"
+  },
+  "output": {
+    "by_stage": {
+      "lost": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "proposal": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "qualified": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 1,
+        "total_cents": 23450,
+        "total_csv": "234.50",
+        "total_display": "R$ 234,50"
+      }
+    },
+    "end": "2026-03-31",
+    "grand": {
+      "count": 1,
+      "total_cents": 23450,
+      "total_csv": "234.50",
+      "total_display": "R$ 234,50"
+    },
+    "results": [
+      {
+        "expected_close": "2026-03-10",
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado",
+        "value_cents": 23450,
+        "value_csv": "234.50",
+        "value_display": "R$ 234,50"
+      }
+    ],
+    "start": "2026-03-01",
+    "total_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "expected_close": "2026-03-01",
+        "pk": 3,
+        "stage": "proposal",
+        "title": "Oficina",
+        "value": "100.5"
+      },
+      {
+        "expected_close": "2026-02-28",
+        "pk": 4,
+        "stage": "proposal",
+        "title": "Cafe",
+        "value": "20.05"
+      }
+    ],
+    "end": null,
+    "start": "2026-03-01"
+  },
+  "output": {
+    "by_stage": {
+      "lost": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "proposal": {
+        "count": 1,
+        "total_cents": 10050,
+        "total_csv": "100.50",
+        "total_display": "R$ 100,50"
+      },
+      "qualified": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 0,
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      }
+    },
+    "end": null,
+    "grand": {
+      "count": 1,
+      "total_cents": 10050,
+      "total_csv": "100.50",
+      "total_display": "R$ 100,50"
+    },
+    "results": [
+      {
+        "expected_close": "2026-03-01",
+        "pk": 3,
+        "stage": "proposal",
+        "title": "Oficina",
+        "value_cents": 10050,
+        "value_csv": "100.50",
+        "value_display": "R$ 100,50"
+      }
+    ],
+    "start": "2026-03-01",
+    "total_count": 1
+  }
+}
+```
+
+Public regression tests: `crm/test_community_pipeline_forecast_filter.py`.
