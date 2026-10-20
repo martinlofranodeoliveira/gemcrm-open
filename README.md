@@ -17,9 +17,24 @@ The screenshot uses fictional records from `seed_demo`, not customer data.
 - Companies and contacts, with search and CSV export.
 - Contact CSV upload, preview and explicit, all-or-nothing confirmation.
 - A five-stage sales pipeline and opportunity values.
-- Follow-up tasks and a dashboard with open opportunities and due actions.
+- Follow-up tasks with open, overdue, today, upcoming and completed filters, plus a dashboard with open opportunities and due actions.
 - Per-account record isolation, CSRF protection and spreadsheet-safe CSV cells.
 - Responsive, keyboard-accessible server-rendered pages; no external frontend CDN.
+
+## Filter tasks by date
+
+Open **Tarefas** and choose the deadline filter, or request it directly:
+
+```text
+/tasks/?status=today
+/tasks/?status=upcoming
+/tasks/?status=today&q=retorno
+```
+
+- `status=today` lists only open tasks of your account with `due_date` equal to Django's `timezone.localdate()`.
+- `status=upcoming` lists only open tasks of your account with `due_date` strictly after `timezone.localdate()`.
+- `q` search combines with every status filter. Existing `open`, `overdue` and `completed` filters keep working; an unknown status falls back to `all`.
+- Dates use the configured Django `TIME_ZONE`, not the browser clock. Filters only read records and never change them.
 
 ## Run locally
 

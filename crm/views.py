@@ -173,6 +173,10 @@ def tasks(request):
         items = items.filter(completed=True)
     elif status == "overdue":
         items = items.filter(completed=False, due_date__lt=timezone.localdate())
+    elif status == "today":
+        items = items.filter(completed=False, due_date=timezone.localdate())
+    elif status == "upcoming":
+        items = items.filter(completed=False, due_date__gt=timezone.localdate())
     else:
         status = "all"
     return render(request, "crm/tasks.html", {"items": items, "q": q, "status": status, "today": timezone.localdate()})
