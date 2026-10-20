@@ -51,6 +51,16 @@ Open **Contatos** to browse only your account's contacts ordered by name then pk
 - Multi-page results show `Página X de Y` in `nav[aria-label="Paginação de contatos"]` with `rel="prev"`/`rel="next"` links only when available. Page URLs keep only `page` and the normalized `q` when non-empty.
 - CSV export ignores `page` and exports all filtered contacts of your account.
 
+## Relatório de pipeline por previsão
+
+HTML em `/reports/pipeline/` e CSV em `/reports/pipeline/export/`.
+
+- Query fechada com `start` e `end` em `AAAA-MM-DD`; ausência ou vazio sem filtro.
+- Sem filtros inclui `expected_close` nulo; com qualquer data só conta previsão dentro do intervalo inclusivo.
+- Mostra etapa e valor atuais por previsão; não é histórico, receita realizada, conversão ou garantia futura.
+- HTML usa `R$ 1234,50` e CSV usa `1234.50`, ambos com duas casas e sem separador de milhar.
+- Filtros inválidos retornam 400 sem tabela nem CSV.
+
 ## Run locally
 
 Requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).

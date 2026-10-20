@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import pipeline_reports
 from . import views
 
 app_name = "crm"
@@ -26,4 +27,6 @@ urlpatterns = [
     path("tasks/<int:pk>/edit/", views.task_update, name="task_update"),
     path("tasks/<int:pk>/delete/", views.task_delete, name="task_delete"),
     path("tasks/<int:pk>/toggle/", views.task_toggle, name="task_toggle"),
+    path("reports/pipeline/", pipeline_reports.pipeline_report, name="pipeline_report"),
+    path("reports/pipeline/export/", pipeline_reports.pipeline_report_export, name="pipeline_report_export"),
 ]
