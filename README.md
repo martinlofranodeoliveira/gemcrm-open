@@ -36,6 +36,21 @@ Open **Tarefas** and choose the deadline filter, or request it directly:
 - `q` search combines with every status filter. Existing `open`, `overdue` and `completed` filters keep working; an unknown status falls back to `all`.
 - Dates use the configured Django `TIME_ZONE`, not the browser clock. Filters only read records and never change them.
 
+## Paginate contacts
+
+Open **Contatos** to browse only your account's contacts ordered by name then pk.
+
+```text
+/contacts/?q=marina
+/contacts/?q=marina&page=2
+/contacts/export/?q=marina
+```
+
+- Lists exactly 50 contacts per page. `q` filters by name, e-mail, phone or company after `q.strip()[:200]`.
+- `page` uses Django `Paginator.get_page(request.GET.get("page"))`: missing, empty or non-integer shows the first page; zero, negative or beyond the last shows the last page. An empty result is page 1 of 1 with 0 records.
+- Multi-page results show `Página X de Y` in `nav[aria-label="Paginação de contatos"]` with `rel="prev"`/`rel="next"` links only when available. Page URLs keep only `page` and the normalized `q` when non-empty.
+- CSV export ignores `page` and exports all filtered contacts of your account.
+
 ## Run locally
 
 Requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).

@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.db import DatabaseError
 from django.db.models import Q, Sum
 from django.http import HttpResponse, HttpResponseBadRequest
@@ -59,8 +60,10 @@ def companies(request):
 @login_required
 def contacts(request):
     q = request.GET.get("q", "").strip()[:200]
-    items = _contacts_for_search(request.user, q)
-    return render(request, "crm/contacts.html", {"items": items, "q": q})
+    items = _contacts_for_search(request.user, q).order_by("name", "pk")
+    paginator = Paginator(items, 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    return render(request, "crm/contacts.html", {"items": page_obj.object_list, "page_obj": page_obj, "q": q})
 
 
 def _render_contact_import(request, form=None, *, status=200, **context):
