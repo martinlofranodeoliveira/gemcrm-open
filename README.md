@@ -472,3 +472,89 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_pipeline_forecast_filter.py`.
+
+
+<!-- community-core:csv-cell-guard -->
+### Spreadsheet-safe CSV cell guard core
+
+Lets the Portuguese self-hosted CRM export contacts, companies and pipeline rows as spreadsheet-safe cells from pure JSON without database reads. It prefixes formula-trigger text with a single quote while leaving safe text unchanged, preserving export content. Ownership filtering and CSV quoting stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/csv_cell_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional key cells (list, default []). Each cell must be str with length <=5000; extra keys ignored. Reject with ValueError if payload is not an object, cells is not a list, len(cells)>2000, or any cell is not str or exceeds length. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1) Preserve inputs without mutation. 2) For each cell in input order with index from 0 compute stripped by removing leading SP, TAB, CR, LF only, then flagged is True when stripped is non-empty and its first character is one of =, +, -, @, |, % else False. 3) Compute safe as original cell when not flagged else single-quote plus original cell preserving all leading whitespace. 4) Build results list each as {index int, source str copy, safe str, flagged bool} in input order. 5) Count flagged_count. Returns dict with total_count int equal to len(cells), flagged_count int, results list. Raises ValueError on malformed types or limit violations. Caller must stringify non-string values before calling and apply ownership filtering and CSV quoting separately; function does no ownership check, DB query, CSV file handling, or clock read and never mutates inputs. Guard is a snapshot formula-prefix mitigation, not a guarantee against all spreadsheet behaviors.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "cells": [
+      "hello",
+      "=SUM(A1)",
+      " @test"
+    ]
+  },
+  "output": {
+    "flagged_count": 2,
+    "results": [
+      {
+        "flagged": false,
+        "index": 0,
+        "safe": "hello",
+        "source": "hello"
+      },
+      {
+        "flagged": true,
+        "index": 1,
+        "safe": "'=SUM(A1)",
+        "source": "=SUM(A1)"
+      },
+      {
+        "flagged": true,
+        "index": 2,
+        "safe": "' @test",
+        "source": " @test"
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "cells": [
+      "-5",
+      "  +calc",
+      "normal, value"
+    ]
+  },
+  "output": {
+    "flagged_count": 2,
+    "results": [
+      {
+        "flagged": true,
+        "index": 0,
+        "safe": "'-5",
+        "source": "-5"
+      },
+      {
+        "flagged": true,
+        "index": 1,
+        "safe": "'  +calc",
+        "source": "  +calc"
+      },
+      {
+        "flagged": false,
+        "index": 2,
+        "safe": "normal, value",
+        "source": "normal, value"
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+Public regression tests: `crm/test_community_csv_cell_guard.py`.
