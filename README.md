@@ -1578,3 +1578,268 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_dashboard_snapshot.py`.
+
+
+<!-- community-core:pipeline-board-snapshot -->
+### Pipeline board snapshot core
+
+Lets the Portuguese self-hosted CRM render the documented five-stage sales pipeline board from pure JSON without database reads. It groups caller-supplied opportunities by current stage with Portuguese labels and per-column plus grand value totals, keeping ownership filtering with the caller.
+
+Reusable deterministic JSON core: `crm/features/pipeline_board_snapshot.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional key deals (list, default []); extra keys ignored. Each deal must be an object with pk int 1 to 9007199254740991 (booleans rejected), title str length 1 to 180, stage str one of new, qualified, proposal, won, lost, value str decimal digits with optional dot and one or two fraction digits, no leading zeros unless zero itself, and total cents at most 99999999999999; extra keys ignored. Reject with ValueError if payload is not an object, deals is not a list, length over 2000, or any entry malformed. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Validate each deal and convert each value to integer cents (100 to 10000, 100.5 to 10050, 100.05 to 10005) without float. 3 Partition all deals into five columns in fixed order new, qualified, proposal, won, lost, retaining input order within each column; no date filtering, every supplied deal appears in exactly one column. 4 For each deal build pk, title, stage, value_cents int, value_csv str exactly two decimals no thousand separator, value_display str R$ plus space plus comma decimal no thousand separator. 5 For each column build label str Portuguese Novo, Qualificado, Proposta, Ganho, Perdido, count int, total_cents int, total_csv str, total_display str, deals list with zero as 0.00 and R$ 0,00. 6 Build grand count, total_cents, total_csv, total_display. Returns dict with deal_count int, columns object, grand object. Raises ValueError on malformed types or limit violations. Caller must pre-filter deals to current account and map ValueError to user error; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Application and UI integration is outside this change. Read-only snapshot only, reflects current stage and value snapshot, not history, realized revenue, conversion, or future guarantee.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria",
+        "value": "100.00"
+      },
+      {
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado",
+        "value": "234.50"
+      }
+    ]
+  },
+  "output": {
+    "columns": {
+      "lost": {
+        "count": 0,
+        "deals": [],
+        "label": "Perdido",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 1,
+        "deals": [
+          {
+            "pk": 1,
+            "stage": "new",
+            "title": "Padaria",
+            "value_cents": 10000,
+            "value_csv": "100.00",
+            "value_display": "R$ 100,00"
+          }
+        ],
+        "label": "Novo",
+        "total_cents": 10000,
+        "total_csv": "100.00",
+        "total_display": "R$ 100,00"
+      },
+      "proposal": {
+        "count": 0,
+        "deals": [],
+        "label": "Proposta",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "qualified": {
+        "count": 0,
+        "deals": [],
+        "label": "Qualificado",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 1,
+        "deals": [
+          {
+            "pk": 2,
+            "stage": "won",
+            "title": "Mercado",
+            "value_cents": 23450,
+            "value_csv": "234.50",
+            "value_display": "R$ 234,50"
+          }
+        ],
+        "label": "Ganho",
+        "total_cents": 23450,
+        "total_csv": "234.50",
+        "total_display": "R$ 234,50"
+      }
+    },
+    "deal_count": 2,
+    "grand": {
+      "count": 2,
+      "total_cents": 33450,
+      "total_csv": "334.50",
+      "total_display": "R$ 334,50"
+    }
+  }
+}
+```
+
+```json
+{
+  "input": {},
+  "output": {
+    "columns": {
+      "lost": {
+        "count": 0,
+        "deals": [],
+        "label": "Perdido",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 0,
+        "deals": [],
+        "label": "Novo",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "proposal": {
+        "count": 0,
+        "deals": [],
+        "label": "Proposta",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "qualified": {
+        "count": 0,
+        "deals": [],
+        "label": "Qualificado",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 0,
+        "deals": [],
+        "label": "Ganho",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      }
+    },
+    "deal_count": 0,
+    "grand": {
+      "count": 0,
+      "total_cents": 0,
+      "total_csv": "0.00",
+      "total_display": "R$ 0,00"
+    }
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "company": "Extra",
+        "pk": 10,
+        "stage": "proposal",
+        "title": "B",
+        "value": "100"
+      },
+      {
+        "pk": 9,
+        "stage": "proposal",
+        "title": "A",
+        "value": "100.5"
+      },
+      {
+        "pk": 11,
+        "stage": "proposal",
+        "title": "C",
+        "value": "100.05"
+      }
+    ]
+  },
+  "output": {
+    "columns": {
+      "lost": {
+        "count": 0,
+        "deals": [],
+        "label": "Perdido",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "new": {
+        "count": 0,
+        "deals": [],
+        "label": "Novo",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "proposal": {
+        "count": 3,
+        "deals": [
+          {
+            "pk": 10,
+            "stage": "proposal",
+            "title": "B",
+            "value_cents": 10000,
+            "value_csv": "100.00",
+            "value_display": "R$ 100,00"
+          },
+          {
+            "pk": 9,
+            "stage": "proposal",
+            "title": "A",
+            "value_cents": 10050,
+            "value_csv": "100.50",
+            "value_display": "R$ 100,50"
+          },
+          {
+            "pk": 11,
+            "stage": "proposal",
+            "title": "C",
+            "value_cents": 10005,
+            "value_csv": "100.05",
+            "value_display": "R$ 100,05"
+          }
+        ],
+        "label": "Proposta",
+        "total_cents": 30055,
+        "total_csv": "300.55",
+        "total_display": "R$ 300,55"
+      },
+      "qualified": {
+        "count": 0,
+        "deals": [],
+        "label": "Qualificado",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      },
+      "won": {
+        "count": 0,
+        "deals": [],
+        "label": "Ganho",
+        "total_cents": 0,
+        "total_csv": "0.00",
+        "total_display": "R$ 0,00"
+      }
+    },
+    "deal_count": 3,
+    "grand": {
+      "count": 3,
+      "total_cents": 30055,
+      "total_csv": "300.55",
+      "total_display": "R$ 300,55"
+    }
+  }
+}
+```
+
+Public regression tests: `crm/test_community_pipeline_board_snapshot.py`.
