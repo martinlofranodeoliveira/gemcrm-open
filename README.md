@@ -1915,3 +1915,89 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_task_draft_validator.py`.
+
+
+<!-- community-core:deal-draft-validator -->
+### Sales opportunity draft validator core
+
+Lets the Portuguese self-hosted CRM validate sales opportunity drafts from pure JSON without database or clock reads. It mirrors Deal title, value, five documented stages, forecast date and optional company and contact links so callers can explain required fields and bad values before saving. Ownership filtering and persistence stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_draft_validator.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object; extra keys ignored. Optional keys: title, value (default "0.00"), stage (default "new"), expected_close (default None), company_pk (default None), contact_pk (default None). Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Reject with ValueError if payload is not an object. 3 Validate title: if missing or None then error "title is required"; if not str then error "title must be a string"; else trim leading/trailing space, TAB, LF, CR and if empty then error "title is required"; if length over 180 then error "title must be at most 180 characters"; else keep trimmed title. 4 Validate value: if missing then use "0.00"; if not str then error "value must be a decimal string"; else must match ^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$ else error "value must be a decimal string"; convert to integer cents without float ("100"->10000, "100.5"->10050, "100.05"->10005) and if total cents over 99999999999999 then error "value is too large"; else keep canonical two-decimal string and cents. 5 Validate stage: if missing then "new"; if not str then error "stage must be one of new, qualified, proposal, won, lost"; else must be one of new, qualified, proposal, won, lost else same error; else keep. 6 Validate expected_close: if missing or None or "" then null; else must be str length 10 YYYY-MM-DD with valid calendar month and day including Feb 29 only on leap years divisible by 400 or divisible by 4 and not by 100 else error "expected_close must be YYYY-MM-DD valid calendar date"; else keep string. 7 Validate company_pk and contact_pk each: if missing or None then null; if bool or not int or outside 1 to 9007199254740991 then error with field name plus " must be an integer 1 to 9007199254740991 or null"; else keep. 8 If any errors return {valid False, errors object with failing keys, normalized null}. 9 Else return {valid True, errors {}, normalized {title trimmed, value canonical two decimals, value_cents int, stage str, expected_close str or null, company_pk int or null, contact_pk int or null}}. Raises ValueError only when payload is not an object. Caller must pre-filter company_pk and contact_pk to current account, enforce Deal ownership and handle persistence; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Read-only draft check only, reflects current vocabulary snapshot, not history, realized revenue, conversion, or future guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "company_pk": null,
+    "contact_pk": null,
+    "expected_close": null,
+    "stage": "new",
+    "title": " Padaria ",
+    "value": "100.5"
+  },
+  "output": {
+    "errors": {},
+    "normalized": {
+      "company_pk": null,
+      "contact_pk": null,
+      "expected_close": null,
+      "stage": "new",
+      "title": "Padaria",
+      "value": "100.50",
+      "value_cents": 10050
+    },
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "company_pk": 0,
+    "contact_pk": false,
+    "expected_close": "2026-02-30",
+    "stage": "closed",
+    "title": "",
+    "value": "abc"
+  },
+  "output": {
+    "errors": {
+      "company_pk": "company_pk must be an integer 1 to 9007199254740991 or null",
+      "contact_pk": "contact_pk must be an integer 1 to 9007199254740991 or null",
+      "expected_close": "expected_close must be YYYY-MM-DD valid calendar date",
+      "stage": "stage must be one of new, qualified, proposal, won, lost",
+      "title": "title is required",
+      "value": "value must be a decimal string"
+    },
+    "normalized": null,
+    "valid": false
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "title": "Mercado"
+  },
+  "output": {
+    "errors": {},
+    "normalized": {
+      "company_pk": null,
+      "contact_pk": null,
+      "expected_close": null,
+      "stage": "new",
+      "title": "Mercado",
+      "value": "0.00",
+      "value_cents": 0
+    },
+    "valid": true
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_draft_validator.py`.
