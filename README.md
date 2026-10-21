@@ -2001,3 +2001,55 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_draft_validator.py`.
+
+
+<!-- community-core:company-draft-validator -->
+### Company draft validator core
+
+Lets the Portuguese self-hosted CRM validate company drafts from pure JSON without database reads. It mirrors Company name, website and notes so callers can explain required fields, bad URLs and overlong text before saving. Ownership filtering and persistence stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_draft_validator.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object; extra keys ignored. Optional keys: name, website (default ""), notes (default ""). Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Reject with ValueError if payload is not an object. 3 Validate name: if missing or None then error "name is required"; if not str then error "name must be a string"; else trim leading/trailing space, TAB, LF, CR and if empty then error "name is required"; if length over 180 then error "name must be at most 180 characters"; else keep trimmed name. 4 Validate website: if missing or None then ""; if not str then error "website must be a valid URL or empty"; else trim leading/trailing space, TAB, LF, CR and if empty then ""; else if length over 200 or not matching ^https?://[^\s]+\.[^\s]+$ then error "website must be a valid URL or empty"; else keep trimmed website. 5 Validate notes: if missing or None then ""; if not str then error "notes must be a string"; if length over 10000 then error "notes must be at most 10000 characters"; else keep unchanged. 6 If any errors return {valid False, errors object with failing keys, normalized null}. 7 Else return {valid True, errors {}, normalized {name trimmed, website trimmed or "", notes str}}. Raises ValueError only when payload is not an object. Caller must pre-filter to current account, enforce Company ownership and handle persistence; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Read-only draft check only, reflects current vocabulary snapshot, not history, conversion, or future guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "name": " Padaria Pao Novo ",
+    "notes": "Fictional example",
+    "website": "https://exemplo.com"
+  },
+  "output": {
+    "errors": {},
+    "normalized": {
+      "name": "Padaria Pao Novo",
+      "notes": "Fictional example",
+      "website": "https://exemplo.com"
+    },
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "name": "   ",
+    "notes": 123,
+    "website": "exemplo"
+  },
+  "output": {
+    "errors": {
+      "name": "name is required",
+      "notes": "notes must be a string",
+      "website": "website must be a valid URL or empty"
+    },
+    "normalized": null,
+    "valid": false
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_draft_validator.py`.
