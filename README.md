@@ -1015,3 +1015,158 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_record_ownership_guard.py`.
+
+
+<!-- community-core:contact-list-pagination -->
+### Contact search and pagination snapshot core
+
+Lets the Portuguese self-hosted CRM browse account contacts by documented name, email, phone or company search with stable name-then-pk ordering and 50-per-page navigation from pure JSON without database reads. It mirrors Contatos list, page fallback, and export-ignores-page semantics. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/contact_list_pagination.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional keys: contacts (list, default []), q (str or None, default None), page (str or int or None, default None); extra keys ignored. Each contact must be an object with pk int 1 to 9007199254740991 (booleans rejected), name str length 1 to 180, email str length 0 to 254, phone str length 0 to 40, company str length 0 to 180; extra keys ignored. Reject with ValueError if payload is not an object, contacts is not a list, len(contacts)>2000, any contact malformed, q is not str or None, page is not str or int or None (booleans rejected). Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Normalize q to empty when missing or None else strip then first 200 characters; when normalized empty keep all contacts else keep only contacts where normalized casefold is substring of name casefold or email casefold or phone casefold or company casefold. 3 Sort kept contacts by name Unicode codepoint then pk ascending. 4 Paginate with per_page 50: total_count equals kept length, total_pages equals ceil(total_count/50) or 1 when zero. Parse page to page_effective: missing or None gives 1; int gives that value; str stripped empty gives 1; str matching optional sign plus digits parses as int else gives 1; other types already rejected. When parsed value between 1 and total_pages inclusive use it, otherwise use total_pages for zero negative and beyond-last, where invalid non-integer already mapped to 1. 5 Slice sorted list for page_effective and build results copying only pk, name, email, phone, company. Returns dict with q normalized str, page_effective int, per_page 50, total_count int, total_pages int, has_previous bool, has_next bool, prev_page int or None, next_page int or None, results list. Raises ValueError on malformed types or limit violations. Caller must pre-filter contacts to current account and keep CSV export over all filtered contacts ignoring page; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Read-only snapshot only.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "contacts": [
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      },
+      {
+        "company": "",
+        "email": "",
+        "name": "Ana Souza",
+        "phone": "",
+        "pk": 1
+      }
+    ],
+    "q": "marina"
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "page_effective": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "marina",
+    "results": [
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      }
+    ],
+    "total_count": 1,
+    "total_pages": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contacts": [
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      },
+      {
+        "company": "",
+        "email": "",
+        "name": "Ana Souza",
+        "phone": "",
+        "pk": 1
+      }
+    ],
+    "page": "2",
+    "q": ""
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "page_effective": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "",
+    "results": [
+      {
+        "company": "",
+        "email": "",
+        "name": "Ana Souza",
+        "phone": "",
+        "pk": 1
+      },
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      }
+    ],
+    "total_count": 2,
+    "total_pages": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contacts": [
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      },
+      {
+        "company": "",
+        "email": "",
+        "name": "Ana Souza",
+        "phone": "",
+        "pk": 1
+      }
+    ],
+    "page": "abc",
+    "q": "  MARINA  "
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "page_effective": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "MARINA",
+    "results": [
+      {
+        "company": "Padaria",
+        "email": "marina@example.com",
+        "name": "Marina Silva",
+        "phone": "",
+        "pk": 2
+      }
+    ],
+    "total_count": 1,
+    "total_pages": 1
+  }
+}
+```
+
+Public regression tests: `crm/test_community_contact_list_pagination.py`.
