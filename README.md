@@ -1843,3 +1843,75 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_pipeline_board_snapshot.py`.
+
+
+<!-- community-core:task-draft-validator -->
+### Follow-up task draft validator core
+
+Lets the Portuguese self-hosted CRM validate follow-up task drafts from pure JSON without database or clock reads. It mirrors Task title, due_date, completed and optional Deal linkage so callers can explain required fields and bad dates before saving. Ownership filtering and persistence stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_draft_validator.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object; extra keys ignored. Optional keys: title, due_date, completed (default False), deal_pk (default None). Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Reject with ValueError if payload is not an object. 3 Validate title: if missing or None then error "title is required"; if not str then error "title must be a string"; else strip space, TAB, LF, CR from both ends and if empty then error "title is required"; if length over 180 then error "title must be at most 180 characters"; else keep trimmed title. 4 Validate due_date: if missing or None or empty string then error "due_date is required"; else must be str length 10 YYYY-MM-DD with valid calendar month and day including Feb 29 only on leap years divisible by 400 or divisible by 4 and not by 100 else error "due_date must be YYYY-MM-DD valid calendar date". 5 Validate completed: if missing then False; if not strictly bool (reject ints) then error "completed must be a boolean". 6 Validate deal_pk: if missing or None then null; if bool or not int or outside 1 to 9007199254740991 then error "deal_pk must be an integer 1 to 9007199254740991 or null". 7 If any errors return {valid False, errors object with failing keys, normalized null}. 8 Else return {valid True, errors {}, normalized {title trimmed, due_date string, completed bool, deal_pk int or null}}. Caller must pre-filter deal_pk to current account, enforce Task ownership and handle persistence; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Read-only draft check only, not history, conversion, or guarantee.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "completed": false,
+    "deal_pk": null,
+    "due_date": "2026-03-10",
+    "title": "Retornar para Marina"
+  },
+  "output": {
+    "errors": {},
+    "normalized": {
+      "completed": false,
+      "deal_pk": null,
+      "due_date": "2026-03-10",
+      "title": "Retornar para Marina"
+    },
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "completed": false,
+    "due_date": "2026-02-30",
+    "title": "  "
+  },
+  "output": {
+    "errors": {
+      "due_date": "due_date must be YYYY-MM-DD valid calendar date",
+      "title": "title is required"
+    },
+    "normalized": null,
+    "valid": false
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "completed": 0,
+    "deal_pk": 0,
+    "due_date": "2024-02-29",
+    "title": "Ligar amanha"
+  },
+  "output": {
+    "errors": {
+      "completed": "completed must be a boolean",
+      "deal_pk": "deal_pk must be an integer 1 to 9007199254740991 or null"
+    },
+    "normalized": null,
+    "valid": false
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_draft_validator.py`.
