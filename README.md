@@ -1443,3 +1443,138 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_directory_snapshot.py`.
+
+
+<!-- community-core:dashboard-snapshot -->
+### Dashboard snapshot core
+
+Lets the Portuguese self-hosted CRM show dashboard counts for open opportunities and due follow-up tasks from pure JSON without database or clock reads. It mirrors Deal stages and Task due dates with a caller-supplied today, keeping ownership filtering with the caller.
+
+Reusable deterministic JSON core: `crm/features/dashboard_snapshot.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with required key today as str YYYY-MM-DD valid calendar date including leap-year February 29 and optional keys deals (list, default empty) and tasks (list, default empty); extra keys ignored. Each deal must be an object with pk int 1 to 9007199254740991 with booleans rejected, stage str one of new, qualified, proposal, won, lost, value str as decimal digits with optional dot and one or two fraction digits, no leading zeros unless zero itself, and total cents at most 99999999999999; extra keys ignored. Each task must be an object with pk int 1 to 9007199254740991 with booleans rejected, due_date str YYYY-MM-DD valid calendar date including leap-year February 29, completed bool strictly; extra keys ignored. Reject with ValueError if payload is not an object, today missing or malformed, deals or tasks are not lists, either length over 2000, or any entry malformed. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Validate today and each due_date as calendar date. 3 Convert each value to integer cents as 100 to 10000 and 100.5 to 10050 and 100.05 to 10005 without float. 4 Define open stages as new, qualified and proposal; won and lost are closed. 5 Count deals_open_count where stage is open and deals_closed_count otherwise; sum open cents; format open totals as total_csv with exactly two decimals and no thousand separator and total_display as R$ with comma decimal and no thousand separator, zero as 0.00 and R$ 0,00. 6 For tasks count tasks_open_count where completed is false and tasks_completed_count where true; among open count overdue where due_date is less than today, due_today where equal, upcoming where greater, compared lexicographically equal to chronological for YYYY-MM-DD; set tasks_due_count to overdue plus due_today. Returns dict with today str, deals_open_count int, deals_closed_count int, deals_open_total_cents int, deals_open_total_csv str, deals_open_total_display str, tasks_open_count int, tasks_completed_count int, tasks_overdue_count int, tasks_due_today_count int, tasks_upcoming_count int, tasks_due_count int. Raises ValueError on malformed types, dates or limit violations. Caller must pre-filter deals and tasks to current account and map ValueError to user error; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Application and UI integration is outside this change. Read-only snapshot only, reflects current stage and value snapshot, not realized revenue, conversion, or future guarantee.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "stage": "new",
+        "value": "100.00"
+      },
+      {
+        "pk": 2,
+        "stage": "won",
+        "value": "234.50"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-03-09",
+        "pk": 1
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-10",
+        "pk": 2
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-11",
+        "pk": 3
+      },
+      {
+        "completed": true,
+        "due_date": "2026-03-09",
+        "pk": 4
+      }
+    ],
+    "today": "2026-03-10"
+  },
+  "output": {
+    "deals_closed_count": 1,
+    "deals_open_count": 1,
+    "deals_open_total_cents": 10000,
+    "deals_open_total_csv": "100.00",
+    "deals_open_total_display": "R$ 100,00",
+    "tasks_completed_count": 1,
+    "tasks_due_count": 2,
+    "tasks_due_today_count": 1,
+    "tasks_open_count": 3,
+    "tasks_overdue_count": 1,
+    "tasks_upcoming_count": 1,
+    "today": "2026-03-10"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [],
+    "tasks": [],
+    "today": "2024-02-29"
+  },
+  "output": {
+    "deals_closed_count": 0,
+    "deals_open_count": 0,
+    "deals_open_total_cents": 0,
+    "deals_open_total_csv": "0.00",
+    "deals_open_total_display": "R$ 0,00",
+    "tasks_completed_count": 0,
+    "tasks_due_count": 0,
+    "tasks_due_today_count": 0,
+    "tasks_open_count": 0,
+    "tasks_overdue_count": 0,
+    "tasks_upcoming_count": 0,
+    "today": "2024-02-29"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 10,
+        "stage": "qualified",
+        "value": "100.5"
+      },
+      {
+        "pk": 11,
+        "stage": "proposal",
+        "value": "1134.05"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-01-15",
+        "pk": 5
+      }
+    ],
+    "today": "2026-01-15"
+  },
+  "output": {
+    "deals_closed_count": 0,
+    "deals_open_count": 2,
+    "deals_open_total_cents": 123455,
+    "deals_open_total_csv": "1234.55",
+    "deals_open_total_display": "R$ 1234,55",
+    "tasks_completed_count": 0,
+    "tasks_due_count": 1,
+    "tasks_due_today_count": 1,
+    "tasks_open_count": 1,
+    "tasks_overdue_count": 0,
+    "tasks_upcoming_count": 0,
+    "today": "2026-01-15"
+  }
+}
+```
+
+Public regression tests: `crm/test_community_dashboard_snapshot.py`.
