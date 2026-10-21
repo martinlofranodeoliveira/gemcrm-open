@@ -1341,3 +1341,105 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_record_delete_preview.py`.
+
+
+<!-- community-core:company-directory-snapshot -->
+### Company directory snapshot core
+
+Lets the Portuguese self-hosted CRM browse account companies with documented name search and stable name-then-pk ordering plus linked contact and deal counts from pure JSON without database reads. It mirrors the companies list ordering and preserves SET_NULL context that deleting a company never removes linked rows. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_directory_snapshot.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional keys: companies (list, default []), contacts (list, default []), deals (list, default []), q (str or None, default None); extra keys ignored. Each company must be an object with pk int 1 to 9007199254740991 (booleans rejected) and name str length 1 to 180; extra keys ignored. Each contact must be an object with pk int 1 to 9007199254740991 (booleans rejected) and company_pk int 1 to 9007199254740991 or None (booleans rejected, missing means None); extra keys ignored. Each deal must be an object with pk int 1 to 9007199254740991 (booleans rejected) and company_pk int 1 to 9007199254740991 or None (booleans rejected, missing means None); extra keys ignored. Reject with ValueError if payload is not an object, any list is not a list, any list length over 2000, any entry malformed, or q is not str or None. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Normalize q to empty when missing or None else strip then first 200 characters; when empty keep all companies else keep only companies where normalized casefold is substring of name casefold. 3 Sort kept companies by name Unicode codepoint then pk ascending. 4 For each kept company count contacts where company_pk equals company pk and deals where company_pk equals company pk. 5 Build results copying only pk, name plus contact_count int plus deal_count int. Returns dict with q normalized str, total_count int, results list. Raises ValueError on malformed types or limit violations. Caller must pre-filter companies, contacts and deals to current account; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Application/UI integration is outside this change. Read-only snapshot only, not deletion or sharing proof.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Padaria Sol",
+        "pk": 2
+      },
+      {
+        "name": "Mercado Lima",
+        "pk": 1
+      }
+    ],
+    "contacts": [
+      {
+        "company_pk": 1,
+        "pk": 10
+      },
+      {
+        "company_pk": 1,
+        "pk": 11
+      },
+      {
+        "company_pk": 2,
+        "pk": 12
+      }
+    ],
+    "deals": [
+      {
+        "company_pk": 1,
+        "pk": 5
+      }
+    ],
+    "q": "  mercado "
+  },
+  "output": {
+    "q": "mercado",
+    "results": [
+      {
+        "contact_count": 2,
+        "deal_count": 1,
+        "name": "Mercado Lima",
+        "pk": 1
+      }
+    ],
+    "total_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Beta",
+        "pk": 1
+      },
+      {
+        "name": "Alfa",
+        "pk": 2
+      }
+    ],
+    "contacts": [],
+    "deals": [],
+    "q": null
+  },
+  "output": {
+    "q": "",
+    "results": [
+      {
+        "contact_count": 0,
+        "deal_count": 0,
+        "name": "Alfa",
+        "pk": 2
+      },
+      {
+        "contact_count": 0,
+        "deal_count": 0,
+        "name": "Beta",
+        "pk": 1
+      }
+    ],
+    "total_count": 2
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_directory_snapshot.py`.
