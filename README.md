@@ -558,3 +558,146 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_csv_cell_guard.py`.
+
+
+<!-- community-core:company-name-resolver -->
+### Import company name resolver core
+
+Lets the Portuguese self-hosted CRM resolve contact-import company names against one account's exact company list from pure JSON without database reads. It mirrors the documented import rule where companies must already exist under one unambiguous exact name, blank means no link, and missing or ambiguous names block the batch. Ownership filtering and contact creation stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_name_resolver.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional keys: companies (list, default []), rows (list, default []). Each company must be an object with pk int >=1 (booleans rejected) and name str length 1..180; extra keys ignored. Each row must be an object with line int >=2 (booleans rejected, unique across rows) and company str length 0..180; extra keys ignored. Reject with ValueError if payload is not an object, companies/rows are not lists, len(companies)>2000, len(rows)>500, any entry malformed, any string exceeds limit, or any line duplicates. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1) Preserve inputs without mutation. 2) Index companies by exact name (case-sensitive, no trim/casefold) mapping name to first pk and ambiguous flag when same name appears for different pks. 3) For each row in input order with company == "" treat as empty with status "empty" and company_pk None; otherwise exact lookup: single pk gives status "resolved" with that pk, no entry gives status "missing" with None, multiple pks give status "ambiguous" with None. 4) Build results list in input order each as {line int, company str copy, status str, company_pk int or None}. 5) Count resolved_count, empty_count, missing_count, ambiguous_count and can_import True only when missing_count==0 and ambiguous_count==0. Returns dict with total_count int equal to len(rows), resolved_count, empty_count, missing_count, ambiguous_count, can_import bool, results list. Raises ValueError on malformed types or limit violations. Caller must pre-filter companies to current account and supply only that account's exact names; function does no ownership check, DB query, CSV file handling, or clock read and never mutates inputs. Exact match is a snapshot import guard, not company creation, merging, or delivery proof.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Padaria Sol",
+        "pk": 1
+      }
+    ],
+    "rows": [
+      {
+        "company": "Padaria Sol",
+        "line": 2
+      },
+      {
+        "company": "",
+        "line": 3
+      }
+    ]
+  },
+  "output": {
+    "ambiguous_count": 0,
+    "can_import": true,
+    "empty_count": 1,
+    "missing_count": 0,
+    "resolved_count": 1,
+    "results": [
+      {
+        "company": "Padaria Sol",
+        "company_pk": 1,
+        "line": 2,
+        "status": "resolved"
+      },
+      {
+        "company": "",
+        "company_pk": null,
+        "line": 3,
+        "status": "empty"
+      }
+    ],
+    "total_count": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Mercado",
+        "pk": 1
+      },
+      {
+        "name": "Mercado",
+        "pk": 2
+      }
+    ],
+    "rows": [
+      {
+        "company": "Mercado",
+        "line": 2
+      }
+    ]
+  },
+  "output": {
+    "ambiguous_count": 1,
+    "can_import": false,
+    "empty_count": 0,
+    "missing_count": 0,
+    "resolved_count": 0,
+    "results": [
+      {
+        "company": "Mercado",
+        "company_pk": null,
+        "line": 2,
+        "status": "ambiguous"
+      }
+    ],
+    "total_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Acme",
+        "pk": 5
+      }
+    ],
+    "rows": [
+      {
+        "company": "acme",
+        "line": 2
+      },
+      {
+        "company": "Desconhecida",
+        "line": 3
+      }
+    ]
+  },
+  "output": {
+    "ambiguous_count": 0,
+    "can_import": false,
+    "empty_count": 0,
+    "missing_count": 2,
+    "resolved_count": 0,
+    "results": [
+      {
+        "company": "acme",
+        "company_pk": null,
+        "line": 2,
+        "status": "missing"
+      },
+      {
+        "company": "Desconhecida",
+        "company_pk": null,
+        "line": 3,
+        "status": "missing"
+      }
+    ],
+    "total_count": 2
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_name_resolver.py`.
