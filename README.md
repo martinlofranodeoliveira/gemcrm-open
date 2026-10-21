@@ -862,3 +862,156 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_task_date_filter.py`.
+
+
+<!-- community-core:record-ownership-guard -->
+### Record ownership isolation check core
+
+Lets the Portuguese self-hosted CRM verify per-account record ownership and foreign-key isolation from pure JSON without database reads. It mirrors OwnedRecord.validate_related_owners for companies, contacts, deals and tasks so callers can snapshot-check that records and their links belong to one account. Ownership enforcement and record creation stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/record_ownership_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with required key owner int >=1 and <=9007199254740991 (booleans rejected) and optional key records (list, default []); extra keys ignored. Each record must be an object with kind str one of company, contact, deal, task, pk int >=1 and <=9007199254740991 (booleans rejected), owner int >=1 and <=9007199254740991 (booleans rejected), plus optional link keys company_owner, contact_owner, deal_owner each int in range or None (booleans rejected, missing means None); extra keys ignored. Reject with ValueError if payload is not an object, owner missing or malformed, records is not a list, len(records)>5000, any record malformed, any link malformed, or per-kind link allowance violated. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1) Preserve inputs without mutation. 2) Normalize missing links to None. Enforce allowance: company requires all links None; contact requires contact_owner and deal_owner None; deal requires deal_owner None; task requires company_owner and contact_owner None, else ValueError. 3) For each record in input order compute owned as record owner equals payload owner, isolated as every allowed link is None or equals record owner, accessible as owned and isolated. 4) Build results list in input order each as {kind, pk, owner, company_owner, contact_owner, deal_owner, owned, isolated, accessible}. 5) Count owned_count, isolated_count, accessible_count. Returns dict with owner, total_count equal to len(records), owned_count, isolated_count, accessible_count, results list. Raises ValueError on malformed types or limit violations. Caller must still scope database queries to the current account and enforce authentication; function does no ownership enforcement, DB query, CSV handling, or clock read and never mutates inputs. Snapshot check only, not creation, merging, updating, deletion, sharing, or delivery proof.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "owner": 7,
+    "records": [
+      {
+        "kind": "company",
+        "owner": 7,
+        "pk": 1
+      },
+      {
+        "company_owner": 7,
+        "kind": "contact",
+        "owner": 7,
+        "pk": 2
+      },
+      {
+        "company_owner": 9,
+        "kind": "contact",
+        "owner": 7,
+        "pk": 3
+      }
+    ]
+  },
+  "output": {
+    "accessible_count": 2,
+    "isolated_count": 2,
+    "owned_count": 3,
+    "owner": 7,
+    "results": [
+      {
+        "accessible": true,
+        "company_owner": null,
+        "contact_owner": null,
+        "deal_owner": null,
+        "isolated": true,
+        "kind": "company",
+        "owned": true,
+        "owner": 7,
+        "pk": 1
+      },
+      {
+        "accessible": true,
+        "company_owner": 7,
+        "contact_owner": null,
+        "deal_owner": null,
+        "isolated": true,
+        "kind": "contact",
+        "owned": true,
+        "owner": 7,
+        "pk": 2
+      },
+      {
+        "accessible": false,
+        "company_owner": 9,
+        "contact_owner": null,
+        "deal_owner": null,
+        "isolated": false,
+        "kind": "contact",
+        "owned": true,
+        "owner": 7,
+        "pk": 3
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "owner": 5,
+    "records": [
+      {
+        "company_owner": 5,
+        "contact_owner": null,
+        "kind": "deal",
+        "owner": 5,
+        "pk": 10
+      },
+      {
+        "deal_owner": 9,
+        "kind": "task",
+        "owner": 9,
+        "pk": 11
+      }
+    ]
+  },
+  "output": {
+    "accessible_count": 1,
+    "isolated_count": 2,
+    "owned_count": 1,
+    "owner": 5,
+    "results": [
+      {
+        "accessible": true,
+        "company_owner": 5,
+        "contact_owner": null,
+        "deal_owner": null,
+        "isolated": true,
+        "kind": "deal",
+        "owned": true,
+        "owner": 5,
+        "pk": 10
+      },
+      {
+        "accessible": false,
+        "company_owner": null,
+        "contact_owner": null,
+        "deal_owner": 9,
+        "isolated": true,
+        "kind": "task",
+        "owned": false,
+        "owner": 9,
+        "pk": 11
+      }
+    ],
+    "total_count": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "owner": 3
+  },
+  "output": {
+    "accessible_count": 0,
+    "isolated_count": 0,
+    "owned_count": 0,
+    "owner": 3,
+    "results": [],
+    "total_count": 0
+  }
+}
+```
+
+Public regression tests: `crm/test_community_record_ownership_guard.py`.
