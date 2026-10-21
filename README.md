@@ -2164,3 +2164,56 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_duplicate_finder.py`.
+
+
+<!-- community-core:br-currency-input-parser -->
+### Brazilian currency input parser core
+
+Lets the Portuguese self-hosted CRM parse user-typed Brazilian currency values from pure JSON without database or clock reads. It accepts an optional R$ prefix, dot thousand separators with comma decimals or plain dot decimals, and returns integer cents plus HTML and CSV strings so callers can validate opportunity values predictably. Ownership, persistence and formatting decisions stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/br_currency_input_parser.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Required key raw must be a string else ValueError. Preserve inputs without mutation. Validate raw length at most 64 else ValueError. Strip leading and trailing space TAB LF CR; if empty raise ValueError. If stripped starts with R$ remove those two characters then strip leading and trailing space TAB LF CR again; if empty raise ValueError. Let s be the remainder. Reject if s contains space TAB LF CR inside else ValueError. Reject if s contains any character other than digits dot comma else ValueError. If s contains comma then it must contain exactly one comma else ValueError; split at comma into int_part and frac_part; frac_part must be one or two digits else ValueError; int_part must be non-empty else ValueError; int_part must match plain integer or Brazilian thousand grouping with dot every three digits else ValueError. If s has no comma then it must contain at most one dot else ValueError; if dot present split into int_part and frac_part with frac_part one or two digits else ValueError; int_part must be 0 or non-zero-leading digits else ValueError; no dot thousand separators allowed in this branch. Remove dots from int_part to obtain digit string; it must be 0 or start with 1-9 with length at most 12 else ValueError. Compute cents without float as integer digits times 100 plus frac padded right to two digits; if cents exceeds 99999999999999 raise ValueError. Build value_csv as integer part dot two digits and value_display as R$ space integer part comma two digits with no thousand separator and zero as 0.00 and R$ 0,00. Returns dict with cents int, value_csv string, value_display string. Raises ValueError on malformed types, empty input, bad characters, bad grouping, bad decimals or oversized length or value. Caller must map ValueError to user error and handle ownership, persistence and localization; function does no ownership check, DB query, CSV file handling or clock read and never mutates inputs. Syntax parsing only, not financial advice, conversion, creation or guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "raw": "R$ 1.234,50"
+  },
+  "output": {
+    "cents": 123450,
+    "value_csv": "1234.50",
+    "value_display": "R$ 1234,50"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "raw": "100.5"
+  },
+  "output": {
+    "cents": 10050,
+    "value_csv": "100.50",
+    "value_display": "R$ 100,50"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "raw": "0"
+  },
+  "output": {
+    "cents": 0,
+    "value_csv": "0.00",
+    "value_display": "R$ 0,00"
+  }
+}
+```
+
+Public regression tests: `crm/test_community_br_currency_input_parser.py`.
