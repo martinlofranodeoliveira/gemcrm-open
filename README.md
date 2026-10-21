@@ -1170,3 +1170,174 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_contact_list_pagination.py`.
+
+
+<!-- community-core:record-delete-preview -->
+### Record delete impact preview core
+
+Lets the Portuguese self-hosted CRM preview confirm-delete impact for companies, contacts, deals and tasks from pure JSON without database reads. It counts linked rows preserved by SET_NULL clearing so callers can explain that deleting one record never removes linked records. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/record_delete_preview.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with required key target as object and optional keys contacts list default empty, deals list default empty, tasks list default empty; extra keys ignored. Target must be an object with kind str one of company, contact, deal, task and pk int 1 to 9007199254740991 with booleans rejected; extra keys ignored. Each contact must be an object with pk int 1 to 9007199254740991 with booleans rejected and company_pk int 1 to 9007199254740991 or None with booleans rejected and missing means None; extra keys ignored. Each deal must be an object with pk int 1 to 9007199254740991 with booleans rejected and company_pk int 1 to 9007199254740991 or None with booleans rejected and missing means None and contact_pk int 1 to 9007199254740991 or None with booleans rejected and missing means None; extra keys ignored. Each task must be an object with pk int 1 to 9007199254740991 with booleans rejected and deal_pk int 1 to 9007199254740991 or None with booleans rejected and missing means None; extra keys ignored. Reject with ValueError if payload is not an object, target missing or malformed, contacts or deals or tasks are not lists, any list length over 2000, or any entry malformed. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 If target kind is company collect contact pks where company_pk equals target pk and deal pks where company_pk equals target pk, deduplicate with local set then sort ascending; affected tasks empty. 3 If target kind is contact collect deal pks where contact_pk equals target pk, deduplicate then sort ascending; affected contacts and tasks empty. 4 If target kind is deal collect task pks where deal_pk equals target pk, deduplicate then sort ascending; affected contacts and deals empty. 5 If target kind is task all affected lists empty. 6 Build affected with contacts list of int plus deals list of int plus tasks list of int, all sorted ascending. 7 Build counts with contacts int plus deals int plus tasks int plus total int sum. 8 Set preserves_linked true always because Company and Contact and Deal links use SET_NULL clearing and deletion never removes linked rows. Returns dict with target kind plus pk, affected contacts plus deals plus tasks, counts contacts plus deals plus tasks plus total, preserves_linked bool true. Raises ValueError on malformed types or limit violations. Caller must pre-filter contacts and deals and tasks to current account and enforce ownership of target; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Preview only, not deletion or history editing or sharing proof.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "contacts": [
+      {
+        "company_pk": 7,
+        "pk": 1
+      },
+      {
+        "company_pk": 8,
+        "pk": 2
+      },
+      {
+        "company_pk": null,
+        "pk": 3
+      }
+    ],
+    "deals": [
+      {
+        "company_pk": 7,
+        "contact_pk": null,
+        "pk": 10
+      },
+      {
+        "company_pk": 8,
+        "contact_pk": null,
+        "pk": 11
+      }
+    ],
+    "target": {
+      "kind": "company",
+      "pk": 7
+    },
+    "tasks": [
+      {
+        "deal_pk": 10,
+        "pk": 20
+      }
+    ]
+  },
+  "output": {
+    "affected": {
+      "contacts": [
+        1
+      ],
+      "deals": [
+        10
+      ],
+      "tasks": []
+    },
+    "counts": {
+      "contacts": 1,
+      "deals": 1,
+      "tasks": 0,
+      "total": 2
+    },
+    "preserves_linked": true,
+    "target": {
+      "kind": "company",
+      "pk": 7
+    }
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contacts": [],
+    "deals": [],
+    "target": {
+      "kind": "deal",
+      "pk": 10
+    },
+    "tasks": [
+      {
+        "deal_pk": 10,
+        "pk": 20
+      },
+      {
+        "deal_pk": 11,
+        "pk": 21
+      },
+      {
+        "deal_pk": null,
+        "pk": 22
+      }
+    ]
+  },
+  "output": {
+    "affected": {
+      "contacts": [],
+      "deals": [],
+      "tasks": [
+        20
+      ]
+    },
+    "counts": {
+      "contacts": 0,
+      "deals": 0,
+      "tasks": 1,
+      "total": 1
+    },
+    "preserves_linked": true,
+    "target": {
+      "kind": "deal",
+      "pk": 10
+    }
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contacts": [],
+    "deals": [
+      {
+        "company_pk": null,
+        "contact_pk": 3,
+        "pk": 10
+      },
+      {
+        "company_pk": null,
+        "contact_pk": 4,
+        "pk": 11
+      }
+    ],
+    "target": {
+      "kind": "contact",
+      "pk": 3
+    },
+    "tasks": []
+  },
+  "output": {
+    "affected": {
+      "contacts": [],
+      "deals": [
+        10
+      ],
+      "tasks": []
+    },
+    "counts": {
+      "contacts": 0,
+      "deals": 1,
+      "tasks": 0,
+      "total": 1
+    },
+    "preserves_linked": true,
+    "target": {
+      "kind": "contact",
+      "pk": 3
+    }
+  }
+}
+```
+
+Public regression tests: `crm/test_community_record_delete_preview.py`.
