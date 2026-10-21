@@ -2053,3 +2053,114 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_draft_validator.py`.
+
+
+<!-- community-core:company-duplicate-finder -->
+### Company duplicate finder core
+
+Lets the Portuguese self-hosted CRM preview ambiguous company names from pure JSON without database or clock reads. It groups owner-scoped companies by trimmed casefolded name so callers can warn before contact CSV import blocks on ambiguous exact names. Ownership filtering and merging stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_duplicate_finder.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional key companies (list, default []). Preserve inputs without mutation. Validate payload is object else ValueError. Validate companies is list max 5000 else ValueError; each entry must be an object with pk int excluding booleans from 1 to 9007199254740991 else ValueError and name str max 180 else ValueError; extra keys ignored; pk values must be unique else ValueError; name stripped of leading and trailing space TAB LF CR must be non-empty else ValueError. Steps: 1 Normalize each name by stripping leading and trailing space TAB LF CR then applying casefold to form key. 2 Group entries by key. 3 Keep only groups with count greater than 1. 4 Sort groups by key code-point order; sort companies within each group by pk ascending each as {pk, name} preserving exact original name. Returns dict with group_count int equal to groups length and groups list each {key str, count int, companies list}. Raises ValueError on malformed types, empty names, duplicate pk, or oversized list. Caller must pre-filter companies to the current account and map ValueError to user error; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Read-only duplicate preview only, not merge, delete, creation, or import resolution; exact-name import matching stays with the caller. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Acme",
+        "pk": 1
+      },
+      {
+        "name": " acme ",
+        "pk": 2
+      },
+      {
+        "name": "Beta",
+        "pk": 3
+      }
+    ]
+  },
+  "output": {
+    "group_count": 1,
+    "groups": [
+      {
+        "companies": [
+          {
+            "name": "Acme",
+            "pk": 1
+          },
+          {
+            "name": " acme ",
+            "pk": 2
+          }
+        ],
+        "count": 2,
+        "key": "acme"
+      }
+    ]
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Padaria",
+        "pk": 1
+      },
+      {
+        "name": "Mercado",
+        "pk": 2
+      }
+    ]
+  },
+  "output": {
+    "group_count": 0,
+    "groups": []
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "SÃO PAULO",
+        "pk": 5
+      },
+      {
+        "name": "são paulo",
+        "pk": 6
+      }
+    ]
+  },
+  "output": {
+    "group_count": 1,
+    "groups": [
+      {
+        "companies": [
+          {
+            "name": "SÃO PAULO",
+            "pk": 5
+          },
+          {
+            "name": "são paulo",
+            "pk": 6
+          }
+        ],
+        "count": 2,
+        "key": "são paulo"
+      }
+    ]
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_duplicate_finder.py`.
