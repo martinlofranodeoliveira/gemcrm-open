@@ -701,3 +701,164 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_name_resolver.py`.
+
+
+<!-- community-core:task-date-filter -->
+### Task date status filter core
+
+Lets the Portuguese self-hosted CRM list follow-up tasks by documented date status from pure JSON without database or clock reads. It mirrors Tarefas open, overdue, today, upcoming, completed and all filters with combined title search, explicit today reference, due-date ordering and read-only snapshot semantics. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_date_filter.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Input payload must be an object with optional keys: tasks (list, default empty), today (str), status (str or None, default None), q (str or None, default None); extra keys ignored. Each task must be an object with pk int from 1 to 9007199254740991 (booleans rejected), title str length 1 to 180, due_date str YYYY-MM-DD valid calendar date, completed bool strictly; extra keys ignored. Reject with ValueError if payload is not an object, tasks is not a list, len tasks over 5000, any task malformed, today missing or not valid YYYY-MM-DD calendar date, status is not str or None, or q is not str or None. Normalize status_effective to all when missing or None, else when str keep exact match one of all, open, overdue, today, upcoming, completed otherwise fallback to all including empty and unknown. Normalize q to empty when missing or None else q stripped and first 200 characters. Validate today and every due_date as YYYY-MM-DD with month 01 to 12 and day valid for month including leap-year February 29, else ValueError. Uses only plain functions and immutable literal module constants with local mutable containers. Steps: 1 Preserve inputs without mutation. 2 Filter by status_effective: all keeps all; open keeps completed false; completed keeps completed true; overdue keeps completed false and due_date before today; today keeps completed false and due_date equal to today; upcoming keeps completed false and due_date after today using lexicographic comparison equal to chronological for YYYY-MM-DD. 3 When normalized q is non-empty keep only tasks where q casefold is substring of title casefold. 4 Sort kept tasks by completed false before true, then due_date ascending, then pk ascending. 5 Build results list copying only pk, title, due_date, completed in sorted order. Returns dict with today str, status_effective str, q normalized str, total_count int equal to len tasks, filtered_count int equal to len results, results list. Raises ValueError on malformed types, dates or limit violations. Caller must pre-filter tasks to current account and supply configured TIME_ZONE localdate as today; function does no ownership check, DB query, CSV handling, or clock read and never mutates inputs. Snapshot filtering only reads records and never changes them.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "q": "",
+    "status": "today",
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-03-09",
+        "pk": 1,
+        "title": "Retorno Marina"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-10",
+        "pk": 2,
+        "title": "Retorno Joao"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-11",
+        "pk": 3,
+        "title": "Proposta final"
+      },
+      {
+        "completed": true,
+        "due_date": "2026-03-10",
+        "pk": 4,
+        "title": "Fechado"
+      }
+    ],
+    "today": "2026-03-10"
+  },
+  "output": {
+    "filtered_count": 1,
+    "q": "",
+    "results": [
+      {
+        "completed": false,
+        "due_date": "2026-03-10",
+        "pk": 2,
+        "title": "Retorno Joao"
+      }
+    ],
+    "status_effective": "today",
+    "today": "2026-03-10",
+    "total_count": 4
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "q": "  retorno ",
+    "status": "weird",
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-03-09",
+        "pk": 5,
+        "title": "Retorno Marina"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-09",
+        "pk": 6,
+        "title": "Ligar fornecedor"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-12",
+        "pk": 7,
+        "title": "RETORNO urgente"
+      }
+    ],
+    "today": "2026-03-10"
+  },
+  "output": {
+    "filtered_count": 2,
+    "q": "retorno",
+    "results": [
+      {
+        "completed": false,
+        "due_date": "2026-03-09",
+        "pk": 5,
+        "title": "Retorno Marina"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-12",
+        "pk": 7,
+        "title": "RETORNO urgente"
+      }
+    ],
+    "status_effective": "all",
+    "today": "2026-03-10",
+    "total_count": 3
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "q": "",
+    "status": "overdue",
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-01-01",
+        "pk": 1,
+        "title": "Atrasada aberta"
+      },
+      {
+        "completed": true,
+        "due_date": "2026-01-01",
+        "pk": 2,
+        "title": "Atrasada fechada"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-03-10",
+        "pk": 3,
+        "title": "Hoje aberta"
+      }
+    ],
+    "today": "2026-03-10"
+  },
+  "output": {
+    "filtered_count": 1,
+    "q": "",
+    "results": [
+      {
+        "completed": false,
+        "due_date": "2026-01-01",
+        "pk": 1,
+        "title": "Atrasada aberta"
+      }
+    ],
+    "status_effective": "overdue",
+    "today": "2026-03-10",
+    "total_count": 3
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_date_filter.py`.
