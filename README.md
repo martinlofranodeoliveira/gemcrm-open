@@ -2217,3 +2217,101 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_br_currency_input_parser.py`.
+
+
+<!-- community-core:company-list-pagination -->
+### Company list pagination core
+
+Lets the Portuguese self-hosted CRM browse its own companies from pure JSON without database reads. It filters by normalized name query, orders by name then pk, and paginates fifty per page with Django get_page semantics so callers render stable lists. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_list_pagination.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional companies list default []; optional q string or None default None; optional page string, integer, or None default None. Preserve inputs without mutation. Validate payload object else ValueError. Validate companies list max 5000 else ValueError. Each entry object else ValueError with pk int excluding booleans 1 to 9007199254740991 else ValueError and name str max 180 else ValueError; extra keys ignored; duplicate pk raises ValueError. Validate q missing or None means empty else must be str max 5000 else ValueError; normalized as stripped space TAB LF CR truncated to 200 chars. Validate page missing or None means 1; int excluding booleans means that value; str stripped space TAB LF CR empty means 1 else all-digit optional minus integer parses else 1 for non-integer; other types raise ValueError. Steps: 1 Normalize q. 2 Filter by casefold substring of name when q non-empty else keep all. 3 Sort by name casefold then name then pk ascending. 4 Compute total_count and num_pages as max 1 of ceiling total over 50 with per_page 50; empty is page 1 of 1. 5 Resolve effective page: non-integer input means 1; integer less than 1 or greater than num_pages means num_pages else value. 6 Slice fifty records and map to pk and name copies. 7 Build flags has_previous, has_next, prev_page, next_page. Returns dict with q string, page int, per_page 50, num_pages int, total_count int, results list, has_previous bool, has_next bool, prev_page int or None, next_page int or None. Raises ValueError on malformed types, oversized lists, duplicate pks or bad page types. Caller must pre-filter companies to current account, map ValueError to user error and render navigation; function does no ownership check, DB query, CSV handling or clock read and never mutates inputs. Read-only list helper only, not creation, update, deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Beta Mercado",
+        "pk": 2
+      },
+      {
+        "name": "Alfa Padaria",
+        "pk": 1
+      }
+    ],
+    "page": "1",
+    "q": " padaria "
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "num_pages": 1,
+    "page": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "padaria",
+    "results": [
+      {
+        "name": "Alfa Padaria",
+        "pk": 1
+      }
+    ],
+    "total_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Zeta",
+        "pk": 3
+      },
+      {
+        "name": "Alfa",
+        "pk": 1
+      },
+      {
+        "name": "alfa",
+        "pk": 2
+      }
+    ],
+    "page": 99,
+    "q": ""
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "num_pages": 1,
+    "page": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "",
+    "results": [
+      {
+        "name": "Alfa",
+        "pk": 1
+      },
+      {
+        "name": "alfa",
+        "pk": 2
+      },
+      {
+        "name": "Zeta",
+        "pk": 3
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_list_pagination.py`.
