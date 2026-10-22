@@ -2445,3 +2445,59 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_list_pagination.py`.
+
+
+<!-- community-core:export-filename-builder -->
+### CSV export filename builder core
+
+Lets the Portuguese self-hosted CRM build safe ASCII download filenames for contact, company and pipeline CSV exports from pure JSON without database, files or clock reads. It normalizes accents, case and symbols deterministically so callers name only current-account exports. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/export_filename_builder.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional base str or None default None meaning export; optional tag str or None default None meaning no tag; optional ext str or None default None meaning csv. Preserve inputs without mutation. Validate payload object else ValueError. Validate base missing or None means raw export else must be str max 500 else ValueError; strip space TAB LF CR and if empty use export. Validate tag missing or None means no tag else must be str max 500 else ValueError; stripped space TAB LF CR empty means no tag. Validate ext missing or None means csv else must be str else ValueError; stripped casefolded must equal csv else ValueError. Sanitize helper: NFKD normalize via unicodedata, casefold, drop Mn combining marks, map via re sub [^a-z0-9]+ to single hyphen, strip leading trailing hyphen, truncate base_slug to 30 and tag_slug to 40 then strip hyphens again; empty base_slug falls back to export and empty tag_slug means no tag. Steps: 1 Normalize raw base and tag and ext. 2 Sanitize to base_slug and tag_slug. 3 Build filename as base_slug plus hyphen tag_slug when present plus dot csv. Returns dict with filename str, base_slug str, tag_slug str empty when absent, ext csv. Raises ValueError on malformed payload, bad types, oversized strings or unsupported ext. Caller must pre-filter rows to current account, choose base and tag vocabularies, map ValueError to user error and attach Content-Disposition; function does no ownership check, DB query, file I/O or clock read and never mutates inputs. Naming helper only, not creation, update, deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "base": "Contatos",
+    "tag": "São Marina"
+  },
+  "output": {
+    "base_slug": "contatos",
+    "ext": "csv",
+    "filename": "contatos-sao-marina.csv",
+    "tag_slug": "sao-marina"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "base": "Pipeline",
+    "tag": "2026-01-01 a 2026-01-31"
+  },
+  "output": {
+    "base_slug": "pipeline",
+    "ext": "csv",
+    "filename": "pipeline-2026-01-01-a-2026-01-31.csv",
+    "tag_slug": "2026-01-01-a-2026-01-31"
+  }
+}
+```
+
+```json
+{
+  "input": {},
+  "output": {
+    "base_slug": "export",
+    "ext": "csv",
+    "filename": "export.csv",
+    "tag_slug": ""
+  }
+}
+```
+
+Public regression tests: `crm/test_community_export_filename_builder.py`.
