@@ -2315,3 +2315,133 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_list_pagination.py`.
+
+
+<!-- community-core:deal-list-pagination -->
+### Deal list pagination core
+
+Lets the Portuguese self-hosted CRM browse its own sales opportunities from pure JSON without database reads. It filters by pipeline stage and normalized title query, orders by title then pk, and paginates fifty per page with Django get_page semantics so callers render stable opportunity lists. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_list_pagination.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional deals list default empty; optional q string or None default None; optional stage string or None default None; optional page string, integer, or None default None. Preserve inputs without mutation. Validate payload object else ValueError. Validate deals list max 5000 else ValueError. Each entry object else ValueError with pk int excluding booleans 1 to 9007199254740991 else ValueError and title str max 180 else ValueError and stage str one of new, qualified, proposal, won, lost else ValueError; extra keys ignored; duplicate pk raises ValueError. Validate q missing or None means empty else must be str max 5000 else ValueError; normalized as stripped space TAB LF CR truncated to 200 chars. Validate stage missing or None means all else must be str else ValueError; stripped space TAB LF CR empty or all means all else must be one of new, qualified, proposal, won, lost else ValueError. Validate page missing or None means 1; int excluding booleans means that value; str stripped space TAB LF CR empty means 1 else optional-minus all-digit integer parses else 1 for non-integer; other types raise ValueError. Steps: 1 Normalize q and stage. 2 Filter by stage when not all then by casefold substring of title when q non-empty else keep all. 3 Sort by title casefold then title then pk ascending. 4 Compute total_count and num_pages as max 1 of ceiling total over 50 with per_page 50; empty is page 1 of 1. 5 Resolve effective page: non-integer input means 1; integer less than 1 or greater than num_pages means num_pages else value. 6 Slice fifty records and map to pk, title and stage copies. 7 Build flags has_previous, has_next, prev_page, next_page. Returns dict with q string, stage string all or stage, page int, per_page 50, num_pages int, total_count int, results list, has_previous bool, has_next bool, prev_page int or None, next_page int or None. Raises ValueError on malformed types, oversized lists, duplicate pks or bad stage and page types. Caller must pre-filter deals to current account, map ValueError to user error and render navigation; function does no ownership check, DB query, CSV handling or clock read and never mutates inputs. Read-only list helper only, not creation, update, deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria"
+      },
+      {
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado"
+      }
+    ],
+    "page": 1,
+    "q": "",
+    "stage": "all"
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "num_pages": 1,
+    "page": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "",
+    "results": [
+      {
+        "pk": 2,
+        "stage": "won",
+        "title": "Mercado"
+      },
+      {
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria"
+      }
+    ],
+    "stage": "all",
+    "total_count": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria Centro"
+      },
+      {
+        "pk": 2,
+        "stage": "qualified",
+        "title": "Padaria Norte"
+      },
+      {
+        "pk": 3,
+        "stage": "new",
+        "title": "Mercado Sul"
+      }
+    ],
+    "page": 1,
+    "q": "padaria",
+    "stage": "new"
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "num_pages": 1,
+    "page": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "padaria",
+    "results": [
+      {
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria Centro"
+      }
+    ],
+    "stage": "new",
+    "total_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [],
+    "page": 99,
+    "q": "zzz",
+    "stage": "all"
+  },
+  "output": {
+    "has_next": false,
+    "has_previous": false,
+    "next_page": null,
+    "num_pages": 1,
+    "page": 1,
+    "per_page": 50,
+    "prev_page": null,
+    "q": "zzz",
+    "results": [],
+    "stage": "all",
+    "total_count": 0
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_list_pagination.py`.
