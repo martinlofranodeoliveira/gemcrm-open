@@ -2501,3 +2501,71 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_export_filename_builder.py`.
+
+
+<!-- community-core:deal-stage-transition-guard -->
+### Deal stage transition guard core
+
+Lets the Portuguese self-hosted CRM validate five-stage pipeline moves from pure JSON without database or clock reads. It allows open-stage progress and closing to won or lost, keeps won and lost terminal, and reports noop, close and blocked cases so callers share form validation. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_stage_transition_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Required keys current_stage str and next_stage str each one of new, qualified, proposal, won, lost else ValueError. Preserve inputs without mutation. Define OPEN as new, qualified, proposal and CLOSED as won, lost. Steps: 1 Validate payload object and both stages are exact strings in set. 2 Set changed false when current_stage equals next_stage else true. 3 Set terminal true when current_stage is won or lost else false. 4 Decide valid: if not changed valid true; else if current_stage in OPEN valid true; else valid false (closed cannot leave to a different stage). 5 Set close true when changed and valid and next_stage is won or lost else false. 6 Set reason to noop when not changed, progress when valid open to open, close when valid open to closed, terminal_blocked when invalid closed to different. Returns dict with current_stage str, next_stage str, valid bool, changed bool, terminal bool, close bool, reason str. Raises ValueError on non-object payload, missing or bad stage types or unknown stage names. Caller must pre-filter deals to current account, map ValueError to user error and enforce ownership, map valid false to form error without saving; function does no ownership check, DB query, CSV handling or clock read and never mutates inputs. Guard only, not creation, update, deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "current_stage": "new",
+    "next_stage": "proposal"
+  },
+  "output": {
+    "changed": true,
+    "close": false,
+    "current_stage": "new",
+    "next_stage": "proposal",
+    "reason": "progress",
+    "terminal": false,
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "current_stage": "qualified",
+    "next_stage": "won"
+  },
+  "output": {
+    "changed": true,
+    "close": true,
+    "current_stage": "qualified",
+    "next_stage": "won",
+    "reason": "close",
+    "terminal": false,
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "current_stage": "won",
+    "next_stage": "lost"
+  },
+  "output": {
+    "changed": true,
+    "close": false,
+    "current_stage": "won",
+    "next_stage": "lost",
+    "reason": "terminal_blocked",
+    "terminal": true,
+    "valid": false
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_stage_transition_guard.py`.
