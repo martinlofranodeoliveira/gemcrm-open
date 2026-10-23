@@ -2850,3 +2850,86 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_task_duplicate_finder.py`.
+
+
+<!-- community-core:contact-draft-validator -->
+### Contact draft validator core
+
+Lets the Portuguese self-hosted CRM validate contact create and edit drafts from pure JSON without database or clock reads. It normalizes whitespace and reports required, length and format problems so forms and CSV flows share one hint. Ownership, company existence and duplicate email checks stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/contact_draft_validator.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) as a pure deterministic function with no IO, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional keys name, email, phone, company, notes default to empty string when missing or None; present values must be str or None else ValueError; any str raw length over 10000 raises ValueError. Steps: 1 Validate types and bounds without mutation. 2 Normalize each field as raw or empty string stripped of space, TAB, LF and CR on both ends. 3 Validate normalized values: name length 1 to 180 else errors name required when empty else too_long; email empty allowed else if length over 254 errors email too_long else if not exactly one at-sign with non-empty local and domain, no space TAB LF CR, domain contains a dot not at ends, no double dot, suffix after last dot at least 2 chars else invalid; phone empty allowed else if length over 40 errors phone too_long else if chars other than digits, space, plus, minus, dot, slash and parentheses or no digit at all else invalid; company empty allowed else length 1 to 180 else too_long; notes length up to 2000 else too_long. 4 Build errors object with only failing fields each one of required, too_long or invalid and normalized object with five trimmed strings. Return dict with valid bool, errors object and normalized object. Raises ValueError on malformed payload or bounds. Preserves inputs without mutation. Caller must pre-filter to current account, verify company existence, enforce duplicate email policy and map ValueError to user error; function does no ownership check, DB query, CSV handling, file IO or clock read. Hint only, not creation, update, deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "company": "Padaria Estrela",
+    "email": "marina@example.com",
+    "name": " Marina Silva ",
+    "notes": "Fictional example",
+    "phone": "+55 11 99999-0000"
+  },
+  "output": {
+    "errors": {},
+    "normalized": {
+      "company": "Padaria Estrela",
+      "email": "marina@example.com",
+      "name": "Marina Silva",
+      "notes": "Fictional example",
+      "phone": "+55 11 99999-0000"
+    },
+    "valid": true
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "company": "",
+    "email": "bad-email",
+    "name": "   ",
+    "notes": "",
+    "phone": "abc"
+  },
+  "output": {
+    "errors": {
+      "email": "invalid",
+      "name": "required",
+      "phone": "invalid"
+    },
+    "normalized": {
+      "company": "",
+      "email": "bad-email",
+      "name": "",
+      "notes": "",
+      "phone": "abc"
+    },
+    "valid": false
+  }
+}
+```
+
+```json
+{
+  "input": {},
+  "output": {
+    "errors": {
+      "name": "required"
+    },
+    "normalized": {
+      "company": "",
+      "email": "",
+      "name": "",
+      "notes": "",
+      "phone": ""
+    },
+    "valid": false
+  }
+}
+```
+
+Public regression tests: `crm/test_community_contact_draft_validator.py`.
