@@ -2569,3 +2569,194 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_stage_transition_guard.py`.
+
+
+<!-- community-core:deal-task-next-action -->
+### Deal next open task map core
+
+Lets the Portuguese self-hosted CRM spot opportunities without follow-up from pure JSON without database or clock reads. It maps each deal to its earliest open task and counts uncovered deals so callers share next-action ordering. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_task_next_action.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional keys deals list default [] and tasks list default [] else ValueError; deals over 2000 or tasks over 5000 raises ValueError. Preserve inputs without mutation. Each deal must be an object with pk int excluding booleans at least 1 and title str else ValueError; extra keys ignored; raw title over 10000 raises ValueError; trimmed by stripping space TAB LF CR from both ends must be 1 to 180 else ValueError; duplicate deal pk raises ValueError. Each task must be an object with pk int excluding booleans at least 1 and title str and due_date str YYYY-MM-DD and completed bool and deal missing or None means unlinked else int excluding booleans at least 1 else ValueError; extra keys ignored; raw title over 10000 raises ValueError; trimmed title 1 to 180 else ValueError; duplicate task pk raises ValueError; due_date must be length 10 with dash at positions 4 and 7 and digits otherwise, year 0001 to 9999 month 01 to 12 day 01 to month length with February 29 only on leap years divisible by 4 except centuries unless divisible by 400 else ValueError. Steps: 1 Validate types bounds uniqueness and dates. 2 Count total_open_tasks as tasks with completed false. 3 For each deal in input order collect open tasks with deal equal to deal pk; null and unknown deal ids contribute only to total. 4 For each deal set open_count length and has_open true when count above 0 else false and next as minimal by due_date string ascending then pk ascending else null. 5 Build results in input deal order each with deal_pk deal_title trimmed has_open open_count next_pk next_title next_due_date with nulls when none. 6 Set total_deals as deals length and deals_with_open as count has_open true and deals_without_open as total minus with. Returns dict with total_deals deals_with_open deals_without_open total_open_tasks results. Raises ValueError on malformed types bounds titles dates or duplicates. Caller must pre-filter deals and tasks to current account, enforce ownership and map ValueError to user error; function does no ownership check, DB query, CSV handling or clock read and never mutates inputs. Coverage snapshot only, not creation update deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "title": "Padaria"
+      },
+      {
+        "pk": 2,
+        "title": "Mercado"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "deal": 1,
+        "due_date": "2026-03-10",
+        "pk": 10,
+        "title": "Ligar"
+      },
+      {
+        "completed": false,
+        "deal": 1,
+        "due_date": "2026-03-08",
+        "pk": 11,
+        "title": "Visita"
+      },
+      {
+        "completed": true,
+        "deal": 2,
+        "due_date": "2026-03-09",
+        "pk": 12,
+        "title": "Proposta"
+      }
+    ]
+  },
+  "output": {
+    "deals_with_open": 1,
+    "deals_without_open": 1,
+    "results": [
+      {
+        "deal_pk": 1,
+        "deal_title": "Padaria",
+        "has_open": true,
+        "next_due_date": "2026-03-08",
+        "next_pk": 11,
+        "next_title": "Visita",
+        "open_count": 2
+      },
+      {
+        "deal_pk": 2,
+        "deal_title": "Mercado",
+        "has_open": false,
+        "next_due_date": null,
+        "next_pk": null,
+        "next_title": null,
+        "open_count": 0
+      }
+    ],
+    "total_deals": 2,
+    "total_open_tasks": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 5,
+        "title": "Oficina"
+      }
+    ],
+    "tasks": []
+  },
+  "output": {
+    "deals_with_open": 0,
+    "deals_without_open": 1,
+    "results": [
+      {
+        "deal_pk": 5,
+        "deal_title": "Oficina",
+        "has_open": false,
+        "next_due_date": null,
+        "next_pk": null,
+        "next_title": null,
+        "open_count": 0
+      }
+    ],
+    "total_deals": 1,
+    "total_open_tasks": 0
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 1,
+        "title": "A"
+      },
+      {
+        "pk": 2,
+        "title": "B"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "deal": 1,
+        "due_date": "2026-04-01",
+        "pk": 20,
+        "title": "Z "
+      },
+      {
+        "completed": false,
+        "deal": 1,
+        "due_date": "2026-04-01",
+        "pk": 19,
+        "title": " Y "
+      },
+      {
+        "completed": false,
+        "deal": null,
+        "due_date": "2026-04-02",
+        "pk": 21,
+        "title": "Livre"
+      },
+      {
+        "completed": false,
+        "deal": 99,
+        "due_date": "2026-04-03",
+        "pk": 22,
+        "title": "Fantasma"
+      },
+      {
+        "completed": true,
+        "deal": 2,
+        "due_date": "2026-04-05",
+        "pk": 23,
+        "title": "Fechada"
+      }
+    ]
+  },
+  "output": {
+    "deals_with_open": 1,
+    "deals_without_open": 1,
+    "results": [
+      {
+        "deal_pk": 1,
+        "deal_title": "A",
+        "has_open": true,
+        "next_due_date": "2026-04-01",
+        "next_pk": 19,
+        "next_title": "Y",
+        "open_count": 2
+      },
+      {
+        "deal_pk": 2,
+        "deal_title": "B",
+        "has_open": false,
+        "next_due_date": null,
+        "next_pk": null,
+        "next_title": null,
+        "open_count": 0
+      }
+    ],
+    "total_deals": 2,
+    "total_open_tasks": 4
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_task_next_action.py`.
