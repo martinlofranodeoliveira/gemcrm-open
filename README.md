@@ -2760,3 +2760,93 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_task_next_action.py`.
+
+
+<!-- community-core:task-duplicate-finder -->
+### Task duplicate finder core
+
+Lets the Portuguese self-hosted CRM spot repeated follow-up tasks from pure JSON without database or clock reads. It groups tasks by normalized title plus due date plus linked deal so callers share duplicate warnings before creating extra follow-ups. Ownership filtering stays with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_duplicate_finder.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers. Input payload must be an object; extra keys ignored. Optional key tasks list default [] else ValueError; length over 500 raises ValueError. Preserve inputs without mutation. Each task must be an object with pk int excluding booleans >=1, title str, due_date str YYYY-MM-DD valid calendar date including leap-year February, deal missing or None means null else int excluding booleans >=1, completed bool else ValueError; extra keys ignored; raw title over 10000 raises ValueError; duplicate task pk raises ValueError. Normalize title by stripping space TAB LF CR from both ends then casefold; normalized length 1..180 else ValueError. Validate due_date length 10 with dashes at positions 4 and 7 and digits otherwise, year 0001..9999 month 01..12 day 01.. month length with February 29 only on leap years divisible by 4 except centuries unless divisible by 400 else ValueError. Steps: 1 Validate types bounds uniqueness and dates. 2 Build key of normalized title plus due_date string plus deal null or int. 3 Group by key in first-seen order. 4 Keep only groups with count above 1 with task_pks sorted ascending; sort groups by due_date ascending then title_normalized ascending then deal null-first then int ascending. 5 Set total_tasks as tasks length and duplicate_group_count as kept groups length and duplicate_task_count as sum of kept counts. Returns dict with total_tasks, duplicate_group_count, duplicate_task_count, groups list each with title_normalized, due_date, deal, count, task_pks. Raises ValueError on malformed types bounds titles dates or duplicate pks. Caller must pre-filter tasks to current account, enforce ownership and map ValueError to user error; function does no ownership check, DB query, CSV handling or clock read and never mutates inputs. Duplicate snapshot only, not creation update deletion or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "tasks": [
+      {
+        "completed": false,
+        "deal": 2,
+        "due_date": "2026-03-10",
+        "pk": 1,
+        "title": " Retorno "
+      },
+      {
+        "completed": false,
+        "deal": 2,
+        "due_date": "2026-03-10",
+        "pk": 2,
+        "title": "retorno"
+      },
+      {
+        "completed": false,
+        "deal": 2,
+        "due_date": "2026-03-11",
+        "pk": 3,
+        "title": "Retorno"
+      }
+    ]
+  },
+  "output": {
+    "duplicate_group_count": 1,
+    "duplicate_task_count": 2,
+    "groups": [
+      {
+        "count": 2,
+        "deal": 2,
+        "due_date": "2026-03-10",
+        "task_pks": [
+          1,
+          2
+        ],
+        "title_normalized": "retorno"
+      }
+    ],
+    "total_tasks": 3
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "tasks": [
+      {
+        "completed": false,
+        "deal": null,
+        "due_date": "2026-03-10",
+        "pk": 1,
+        "title": "Ligar"
+      },
+      {
+        "completed": false,
+        "deal": 5,
+        "due_date": "2026-03-10",
+        "pk": 2,
+        "title": "Ligar"
+      }
+    ]
+  },
+  "output": {
+    "duplicate_group_count": 0,
+    "duplicate_task_count": 0,
+    "groups": [],
+    "total_tasks": 2
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_duplicate_finder.py`.
