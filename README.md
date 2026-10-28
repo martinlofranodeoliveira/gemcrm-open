@@ -2995,3 +2995,98 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_task_deal_date_parser.py`.
+
+
+<!-- community-core:contact-import-batch-guard -->
+### Contact import batch limits guard core
+
+Lets the Portuguese self-hosted CRM enforce documented contact CSV import ceilings from pure JSON without database or clock reads, so sellers fail closed before preview checks when a file exceeds 256 KiB or 500 rows or snapshots exceed 20000 contacts or companies while ownership and parsing stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/contact_import_batch_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators/classes/async/generator/global/nonlocal, attribute assignment/deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Required keys file_bytes, preview_rows, existing_contacts, matching_companies must be ints excluding booleans else ValueError; missing or None raises ValueError; negative raises ValueError. Limits are MAX_FILE_BYTES 262144, MAX_PREVIEW_ROWS 500, MAX_EXISTING_CONTACTS 20000, MAX_MATCHING_COMPANIES 20000. Steps: 1 Validate types and negativity without DB, clock or Date. 2 Start empty reasons list. 3 If file_bytes equals 0 append empty_file else if file_bytes exceeds MAX_FILE_BYTES append file_too_large. 4 If preview_rows equals 0 append empty_preview else if preview_rows exceeds MAX_PREVIEW_ROWS append too_many_rows. 5 If existing_contacts exceeds MAX_EXISTING_CONTACTS append too_many_existing_contacts. 6 If matching_companies exceeds MAX_MATCHING_COMPANIES append too_many_matching_companies. 7 Set allowed true when reasons empty else false. Returns dict with file_bytes, preview_rows, existing_contacts, matching_companies, allowed bool, reasons list, limits object with max_file_bytes, max_preview_rows, max_existing_contacts, max_matching_companies. Raises ValueError on malformed types or negativity. Preserves inputs without mutation. Caller must pre-filter counts to current account, enforce ownership, parse CSV and BOM, resolve exact company names, check duplicates, enforce 15-minute window with transactional replay protection and map ValueError to user error and allowed false to fail-closed block without creating contacts; function does no ownership check, DB query, file I/O, CSV parsing or clock read and never creates, merges, updates or deletes records. Limits reflect documented import ceilings, not delivery guarantee or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "existing_contacts": 10,
+    "file_bytes": 1024,
+    "matching_companies": 5,
+    "preview_rows": 2
+  },
+  "output": {
+    "allowed": true,
+    "existing_contacts": 10,
+    "file_bytes": 1024,
+    "limits": {
+      "max_existing_contacts": 20000,
+      "max_file_bytes": 262144,
+      "max_matching_companies": 20000,
+      "max_preview_rows": 500
+    },
+    "matching_companies": 5,
+    "preview_rows": 2,
+    "reasons": []
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "existing_contacts": 0,
+    "file_bytes": 262145,
+    "matching_companies": 1,
+    "preview_rows": 1
+  },
+  "output": {
+    "allowed": false,
+    "existing_contacts": 0,
+    "file_bytes": 262145,
+    "limits": {
+      "max_existing_contacts": 20000,
+      "max_file_bytes": 262144,
+      "max_matching_companies": 20000,
+      "max_preview_rows": 500
+    },
+    "matching_companies": 1,
+    "preview_rows": 1,
+    "reasons": [
+      "file_too_large"
+    ]
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "existing_contacts": 20001,
+    "file_bytes": 100,
+    "matching_companies": 20001,
+    "preview_rows": 0
+  },
+  "output": {
+    "allowed": false,
+    "existing_contacts": 20001,
+    "file_bytes": 100,
+    "limits": {
+      "max_existing_contacts": 20000,
+      "max_file_bytes": 262144,
+      "max_matching_companies": 20000,
+      "max_preview_rows": 500
+    },
+    "matching_companies": 20001,
+    "preview_rows": 0,
+    "reasons": [
+      "empty_preview",
+      "too_many_existing_contacts",
+      "too_many_matching_companies"
+    ]
+  }
+}
+```
+
+Public regression tests: `crm/test_community_contact_import_batch_guard.py`.
