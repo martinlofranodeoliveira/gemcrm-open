@@ -3090,3 +3090,133 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_contact_import_batch_guard.py`.
+
+
+<!-- community-core:company-website-link-guard -->
+### Company website link guard core
+
+Lets the Portuguese self-hosted CRM guard Company.website links from pure JSON without database, clock or network reads, so sellers keep blank websites allowed and render only http and https company links safely on server-rendered pages while javascript, data and other schemes plus missing hosts and unsafe characters block for review while ownership filtering, escaping, fetching and persistence stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/company_website_link_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Optional key websites defaults to empty list when missing; None raises ValueError; non-list raises ValueError; length over 20 raises ValueError. Each website must be str else ValueError; raw length over 500 raises ValueError. Steps: 1 Validate types and bounds without DB, clock or network. 2 For each website in input order with index starting at 0, strip ASCII space, TAB, LF and CR at both ends to get trimmed. 3 If trimmed is empty, result kind blank with allowed true, href null, display_host empty string and empty reasons. 4 Else kind link; check scheme case-insensitive must start with http:// or https:// else blocked with reason unsafe_scheme; check trimmed must contain no space, TAB, LF or CR else reason contains_space; check trimmed must contain none of angle brackets, double quote word, single quote, backtick and backslash word else reason unsafe_chars; extract host as chars after scheme up to first slash, question or hash, else blocked with reason missing_host when empty; host must contain none of whitespace or angle or quote chars else blocked. 5 When all checks pass, allowed true, href trimmed, display_host lowercased host, reasons empty. 6 When any check fails, allowed false, href null, display_host empty string, reasons list with failing codes in fixed order unsafe_scheme, contains_space, unsafe_chars, missing_host. 7 Preserve input order and never mutate inputs. 8 Compute total_count, allowed_count and blocked_count. Returns dict with total_count int, allowed_count int, blocked_count int and results list each as index int, website original str, trimmed str, kind blank or link, allowed bool, href str or null, display_host str and reasons list. Raises ValueError on malformed types or bounds. Caller must pre-filter companies to current account, enforce ownership, escape href for anchor rendering, handle DB, file I/O and network fetching and map ValueError to user error; function does no ownership check, DB query, file I/O, network fetch, clock read and never creates, merges, updates or deletes records. Safe results reflect supplied snapshot syntax only, not reachability, delivery guarantee or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "websites": [
+      "",
+      "https://www.exemplo.com.br",
+      "javascript:alert(1)"
+    ]
+  },
+  "output": {
+    "allowed_count": 2,
+    "blocked_count": 1,
+    "results": [
+      {
+        "allowed": true,
+        "display_host": "",
+        "href": null,
+        "index": 0,
+        "kind": "blank",
+        "reasons": [],
+        "trimmed": "",
+        "website": ""
+      },
+      {
+        "allowed": true,
+        "display_host": "www.exemplo.com.br",
+        "href": "https://www.exemplo.com.br",
+        "index": 1,
+        "kind": "link",
+        "reasons": [],
+        "trimmed": "https://www.exemplo.com.br",
+        "website": "https://www.exemplo.com.br"
+      },
+      {
+        "allowed": false,
+        "display_host": "",
+        "href": null,
+        "index": 2,
+        "kind": "link",
+        "reasons": [
+          "unsafe_scheme"
+        ],
+        "trimmed": "javascript:alert(1)",
+        "website": "javascript:alert(1)"
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "websites": [
+      "  https://Loja.Exemplo.com/caminho  ",
+      "https://exemplo.com/a<b",
+      "https://"
+    ]
+  },
+  "output": {
+    "allowed_count": 1,
+    "blocked_count": 2,
+    "results": [
+      {
+        "allowed": true,
+        "display_host": "loja.exemplo.com",
+        "href": "https://Loja.Exemplo.com/caminho",
+        "index": 0,
+        "kind": "link",
+        "reasons": [],
+        "trimmed": "https://Loja.Exemplo.com/caminho",
+        "website": "  https://Loja.Exemplo.com/caminho  "
+      },
+      {
+        "allowed": false,
+        "display_host": "",
+        "href": null,
+        "index": 1,
+        "kind": "link",
+        "reasons": [
+          "unsafe_chars"
+        ],
+        "trimmed": "https://exemplo.com/a<b",
+        "website": "https://exemplo.com/a<b"
+      },
+      {
+        "allowed": false,
+        "display_host": "",
+        "href": null,
+        "index": 2,
+        "kind": "link",
+        "reasons": [
+          "missing_host"
+        ],
+        "trimmed": "https://",
+        "website": "https://"
+      }
+    ],
+    "total_count": 3
+  }
+}
+```
+
+```json
+{
+  "input": {},
+  "output": {
+    "allowed_count": 0,
+    "blocked_count": 0,
+    "results": [],
+    "total_count": 0
+  }
+}
+```
+
+Public regression tests: `crm/test_community_company_website_link_guard.py`.
