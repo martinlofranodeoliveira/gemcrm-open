@@ -2933,3 +2933,65 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_contact_draft_validator.py`.
+
+
+<!-- community-core:task-deal-date-parser -->
+### Task and deal date parser core
+
+Offers Brazilian date entry for the Portuguese self-hosted CRM from pure JSON without database or clock reads, accepting DD/MM/YYYY alongside YYYY-MM-DD and normalizing to ISO for Task.due_date and Deal.expected_close storage with a Portuguese display form, so sellers type follow-up and forecast dates naturally while ownership filtering and persistence stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_deal_date_parser.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators/classes/async/generator/global/nonlocal, attribute assignment/deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Key text is required str; missing/None/non-str raises ValueError. Raw text length over 5000 raises ValueError; normalized is text stripped of space TAB LF CR at both ends; empty normalized raises ValueError; normalized length over 100 raises ValueError. Accepted shapes only: ISO YYYY-MM-DD matching four digits dash two digits dash two digits, or BR D/M/YYYY matching one or two digits slash one or two digits slash four digits with no inner spaces; any mixed separators or other shape raises ValueError. Year must be 1 to 9999 else ValueError; month 1 to 12 else ValueError; day must be valid for month including Feb 29 on leap years where leap is divisible by 400 or divisible by 4 and not by 100 else ValueError. Steps: 1 Validate types and bounds without DB, clock or Date. 2 Strip to normalized. 3 Branch on slash presence to BR else ISO and parse integer parts without float. 4 Validate calendar range. 5 Build iso_date as YYYY-MM-DD zero-padded to 4/2/2 digits, year/month/day ints, input_format iso or br, display_br as DD/MM/YYYY zero-padded to 2/2/4 digits. Returns dict with iso_date str, year int, month int, day int, input_format str, display_br str. Raises ValueError on malformed types, bounds, shapes or calendar dates. Preserves inputs without mutation. Caller must enforce per-account ownership and map ValueError to user error; function does no ownership check, DB query, file I/O or clock read and never creates, merges, updates or deletes records. Normalized dates reflect supplied entry for Task.due_date and Deal.expected_close input, not delivery guarantee or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "text": "10/03/2026"
+  },
+  "output": {
+    "day": 10,
+    "display_br": "10/03/2026",
+    "input_format": "br",
+    "iso_date": "2026-03-10",
+    "month": 3,
+    "year": 2026
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "text": "2026-03-10"
+  },
+  "output": {
+    "day": 10,
+    "display_br": "10/03/2026",
+    "input_format": "iso",
+    "iso_date": "2026-03-10",
+    "month": 3,
+    "year": 2026
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "text": " 5/3/2026 "
+  },
+  "output": {
+    "day": 5,
+    "display_br": "05/03/2026",
+    "input_format": "br",
+    "iso_date": "2026-03-05",
+    "month": 3,
+    "year": 2026
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_deal_date_parser.py`.
