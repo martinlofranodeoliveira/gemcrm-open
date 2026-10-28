@@ -3220,3 +3220,74 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_company_website_link_guard.py`.
+
+
+<!-- community-core:contact-import-confirm-gate -->
+### Contact import confirm gate core
+
+Lets the Portuguese self-hosted CRM decide an explicit contact CSV confirmation from pure JSON without database or clock reads, mirroring all-or-nothing confirmation with durable replay receipt and canonical preview state so sellers keep second confirmations blocked, old previews after re-upload rejected, invalid replacements held not ready, expired previews blocked and missing session CSV failed closed for re-upload while ownership filtering, expiry timing, CSV storage and transactional saving stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/contact_import_confirm_gate.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object; extra keys ignored; None or non-dict raises ValueError. Required keys presented_nonce_digest, canonical_nonce_digest, presented_session_digest, canonical_session_digest each must be str of length 64 with only 0-9 and a-f else ValueError; required keys canonical_ready, canonical_expired, receipt_exists, session_has_csv each must be bool exactly else ValueError; missing keys raise ValueError. Caller supplies digests and flags pre-filtered to the current account from stored receipt, canonical preview and session presence and computes expiry from its own clock; function does no ownership check, DB query, file I/O, session read or clock read and never mutates inputs. Steps: 1 Validate types and hex shape without DB or clock. 2 If session_has_csv is False return decision reupload. 3 Else if presented_session_digest differs from canonical_session_digest return session_mismatch. 4 Else if presented_nonce_digest differs from canonical_nonce_digest return stale_preview. 5 Else if canonical_expired is True return expired. 6 Else if canonical_ready is False return not_ready. 7 Else if receipt_exists is True return replayed. 8 Else return allow. Returns dict with decision str one of allow, reupload, session_mismatch, stale_preview, expired, not_ready, replayed and can_import bool true only when decision is allow else false. Raises ValueError on malformed types or shapes. Caller must pre-filter digests to current account, enforce ownership, load canonical preview and receipt records, track session CSV presence, enforce the 15-minute window via canonical_expired, handle CSV bytes, transactions and retries and map ValueError to user error; function creates, merges, updates or deletes no records. Decisions reflect supplied snapshot only, not history, delivery guarantee or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "canonical_expired": false,
+    "canonical_nonce_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "canonical_ready": true,
+    "canonical_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "presented_nonce_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "presented_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "receipt_exists": false,
+    "session_has_csv": true
+  },
+  "output": {
+    "can_import": true,
+    "decision": "allow"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "canonical_expired": false,
+    "canonical_nonce_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "canonical_ready": true,
+    "canonical_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "presented_nonce_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "presented_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "receipt_exists": true,
+    "session_has_csv": true
+  },
+  "output": {
+    "can_import": false,
+    "decision": "replayed"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "canonical_expired": false,
+    "canonical_nonce_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "canonical_ready": true,
+    "canonical_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "presented_nonce_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "presented_session_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "receipt_exists": false,
+    "session_has_csv": true
+  },
+  "output": {
+    "can_import": false,
+    "decision": "stale_preview"
+  }
+}
+```
+
+Public regression tests: `crm/test_community_contact_import_confirm_gate.py`.
