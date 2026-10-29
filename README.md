@@ -3291,3 +3291,54 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_contact_import_confirm_gate.py`.
+
+
+<!-- community-core:list-filter-state-keeper -->
+### Filter-preserving list state core
+
+Lets the Portuguese self-hosted CRM keep documented list filters while paging from pure JSON without database or clock reads, mirroring contacts q.strip()[:200] with keep-only-page-plus-q URLs and tasks status fallback to all with q combining, so sellers retain search and status context across pages while ownership filtering, record matching, pagination slicing and URL encoding stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/list_filter_state_keeper.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Required key view must be str one of contacts, tasks else ValueError; missing raises ValueError. Optional key q defaults to empty string when missing or None; non-str raises ValueError; str normalized as q.strip()[:200]. Optional key status handling per view: for contacts input ignored of any type with output None; for tasks missing/None/empty-string means all, otherwise must be str else ValueError with known values open, overdue, today, upcoming, completed, all kept and any other string falling back to all without raising. Steps: 1 Validate types without DB, clock or Date. 2 Normalize q. 3 Canonicalize status per view. 4 Build preserved object with only non-default filters: for contacts include q only when non-empty; for tasks include q only when non-empty and status only when not all. 5 Set total_preserved to preserved length. Returns dict with view str echo, q str normalized, status str for tasks or None for contacts, preserved object, total_preserved int. Raises ValueError on malformed types or missing view. Preserves inputs without mutation. Caller must pre-filter records to current account, enforce ownership, implement q/status record matching, paginate via Paginator.get_page, encode URLs, handle TIME_ZONE dating and map ValueError to user error; function does no ownership check, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Filter state reflects supplied query only, not history, realized revenue, conversion or future guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "q": "  Marina  ",
+    "view": "contacts"
+  },
+  "output": {
+    "preserved": {
+      "q": "Marina"
+    },
+    "q": "Marina",
+    "status": null,
+    "total_preserved": 1,
+    "view": "contacts"
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "q": " retorno ",
+    "status": "bogus",
+    "view": "tasks"
+  },
+  "output": {
+    "preserved": {
+      "q": "retorno"
+    },
+    "q": "retorno",
+    "status": "all",
+    "total_preserved": 1,
+    "view": "tasks"
+  }
+}
+```
+
+Public regression tests: `crm/test_community_list_filter_state_keeper.py`.
