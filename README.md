@@ -3342,3 +3342,81 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_list_filter_state_keeper.py`.
+
+
+<!-- community-core:local-asset-guard -->
+### Local frontend asset guard core
+
+Lets the Portuguese self-hosted CRM verify server-rendered pages keep the documented no-external-frontend-CDN promise from pure JSON without database, clock, network or file reads, classifying supplied href/src strings as local or external so maintainers catch CDN drift before serving pages while ownership filtering, template rendering, URL fetching and offline checks stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/local_asset_guard.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Optional key assets defaults to [] when missing; None raises ValueError; non-list raises ValueError; length over 50 raises ValueError. Each asset must be str else ValueError; length 1 to 1000 else ValueError; blank after strip (asset.strip()=='') raises ValueError. Steps: 1 Validate types and bounds without DB, clock, network or file read. 2 Trim each asset with strip to trimmed preserving inner case. 3 Classify as external when trimmed.casefold() starts with 'http://', 'https://' or '//', else local; data:, blob:, relative, root-absolute and same-origin paths are local. 4 Build external and local lists of trimmed strings in input order including duplicates. 5 Count total, external_count, local_count and set allows_offline True only when external_count==0. Returns dict with total int, external_count int, local_count int, allows_offline bool, external list, local list. Raises ValueError on malformed types, bounds or blank assets. Preserves inputs without mutation. Caller must pre-extract href/src strings to current page, enforce ownership, handle rendering, encoding, file I/O, network fetch and clock and map ValueError to user error; function does no ownership check, DB query, file I/O, network fetch, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied list only, not history, delivery guarantee or permission enforcement. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "assets": [
+      "/static/crm/app.css",
+      "https://cdn.example.com/lib.js"
+    ]
+  },
+  "output": {
+    "allows_offline": false,
+    "external": [
+      "https://cdn.example.com/lib.js"
+    ],
+    "external_count": 1,
+    "local": [
+      "/static/crm/app.css"
+    ],
+    "local_count": 1,
+    "total": 2
+  }
+}
+```
+
+```json
+{
+  "input": {},
+  "output": {
+    "allows_offline": true,
+    "external": [],
+    "external_count": 0,
+    "local": [],
+    "local_count": 0,
+    "total": 0
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "assets": [
+      "//cdn.example.com/x.js",
+      "  HTTP://example.com/y.js ",
+      "/static/crm/app.css",
+      "data:text/css,body{}"
+    ]
+  },
+  "output": {
+    "allows_offline": false,
+    "external": [
+      "//cdn.example.com/x.js",
+      "HTTP://example.com/y.js"
+    ],
+    "external_count": 2,
+    "local": [
+      "/static/crm/app.css",
+      "data:text/css,body{}"
+    ],
+    "local_count": 2,
+    "total": 4
+  }
+}
+```
+
+Public regression tests: `crm/test_community_local_asset_guard.py`.
