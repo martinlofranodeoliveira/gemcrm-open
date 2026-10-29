@@ -3420,3 +3420,80 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_local_asset_guard.py`.
+
+
+<!-- community-core:cross-record-owner-match -->
+### Cross-record owner match core
+
+Lets the Portuguese self-hosted CRM verify Contact.company, Deal.company/contact and Task.deal links stay inside one account from pure JSON without database reads, mirroring OwnedRecord.validate_related_owners, so sellers see Escolha um registro da sua conta before saving while fetching and saving stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/cross_record_owner_match.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only plain functions and immutable literal module constants with local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Required key owner_id must be int exactly (booleans rejected) >=1 else ValueError; missing raises ValueError. Optional key links defaults to [] when missing; None raises ValueError; non-list raises ValueError; length over 10 raises ValueError. Each link must be dict else ValueError; extra keys ignored. Each link requires field str one of company, contact, deal else ValueError; missing raises ValueError. Duplicate field values in one payload raise ValueError. Optional link key related_owner_id defaults to None when missing; None allowed; otherwise must be int exactly (booleans rejected) >=1 else ValueError. Steps: 1 Validate types without DB, clock or Date. 2 For each link where related_owner_id is not None and not equal to owner_id add errors entry field to Portuguese message Escolha um registro da sua conta. 3 Set valid True when errors empty else False. 4 Set checked to links length and violated to errors length. Returns dict with owner_id int echo, checked int, violated int, valid bool, errors object mapping violating field to message. Raises ValueError on malformed types, unknown fields or duplicate fields. Preserves inputs without mutation. Caller must pre-resolve owner and related owner ids to current account records, enforce record ownership, implement fetching, validation scope and saving and map ValueError to user error; function does no ownership lookup, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Link result reflects supplied ids only under SET_NULL semantics where None links always pass; not history, realized revenue, conversion or future guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "links": [
+      {
+        "field": "company",
+        "related_owner_id": 7
+      },
+      {
+        "field": "contact",
+        "related_owner_id": null
+      }
+    ],
+    "owner_id": 7
+  },
+  "output": {
+    "checked": 2,
+    "errors": {},
+    "owner_id": 7,
+    "valid": true,
+    "violated": 0
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "links": [
+      {
+        "field": "deal",
+        "related_owner_id": 9
+      }
+    ],
+    "owner_id": 7
+  },
+  "output": {
+    "checked": 1,
+    "errors": {
+      "deal": "Escolha um registro da sua conta."
+    },
+    "owner_id": 7,
+    "valid": false,
+    "violated": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "owner_id": 5
+  },
+  "output": {
+    "checked": 0,
+    "errors": {},
+    "owner_id": 5,
+    "valid": true,
+    "violated": 0
+  }
+}
+```
+
+Public regression tests: `crm/test_community_cross_record_owner_match.py`.
