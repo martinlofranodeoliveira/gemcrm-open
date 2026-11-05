@@ -1,3 +1,57 @@
+<!-- public-docs-pt:v1 -->
+# GemCRM — CRM aberto para pequenos negócios
+
+CRM independente em português para contatos, empresas, oportunidades e tarefas. É auto-hospedado e mantém isolamento por conta.
+
+**Estado:** edição pública de desenvolvimento. Recursos e limites detalhados estão na referência técnica preservada abaixo.
+
+## Começar em português
+
+**Requisitos:** Python 3.12+ e uv; alternativa por requirements.txt no guia original.
+
+```sh
+git clone https://github.com/martinlofranodeoliveira/gemcrm-open.git
+cd gemcrm-open
+uv sync
+uv run python manage.py migrate
+uv run python manage.py runserver 127.0.0.1:8093
+```
+
+Use um ambiente de desenvolvimento separado. Não envie `.env`, chaves, bancos,
+uploads ou dados pessoais ao Git. Nas demonstrações, use somente dados fictícios.
+
+## Documentação e validação
+
+[Contribuições](CONTRIBUTING.md) · [Planejamento](ROADMAP.md) · [Licença](LICENSE) · [Catálogo do laboratório](https://github.com/martinlofranodeoliveira#projetos-abertos)
+
+Os comandos acima foram conferidos nos manifests/guia público; não significam que todas as integrações, plataformas ou serviços reais foram exercitados nesta revisão documental.
+
+A referência técnica original abaixo preserva APIs, exemplos, limites e histórico
+de funcionalidades. Auxiliares em `community/` são módulos independentes: sua
+existência não comprova integração na interface ou no fluxo principal. Ao avaliar
+uma funcionalidade, consulte também o teste e o código do módulo correspondente.
+
+## Contribuir
+
+Abra uma issue com objetivo, comportamento observado, versão e um exemplo mínimo
+sintético. Para código, inclua testes relevantes, instruções de reprodução e
+atualização da documentação. Não envie segredos ou informações de terceiros em
+issues, exemplos, capturas ou pull requests. Mudanças úteis e completas têm
+preferência sobre alterações feitas apenas para aumentar atividade.
+
+## Licença e autoria
+
+Licença declarada no repositório: **MIT**. Consulte o arquivo de licença e mantenha as atribuições de terceiros.
+
+Nome técnico e URL preservados para manter imports, links e automações existentes.
+Título, descrição e tópicos em português facilitam localizar a finalidade do projeto.
+
+<!-- public-docs-pt:end -->
+
+---
+
+## Referência técnica e documentação original
+
 # GemCRM Open
 
 A small, self-hosted CRM in Portuguese for contacts, companies, sales opportunities
