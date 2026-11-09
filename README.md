@@ -4047,3 +4047,130 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_contact_activity_timeline.py`.
+
+
+<!-- community-core:deal-forecast-readiness-triage -->
+### Deal forecast readiness triage core
+
+Lets the Portuguese self-hosted CRM list open opportunities missing, overdue, due-today or upcoming forecast dates from pure JSON without database or clock reads. It mirrors Deal five stages with open new, qualified, proposal versus closed won, lost plus nullable expected_close and the pipeline-by-forecast report need, taking caller-supplied today plus synthetic deals and returning sorted pk buckets with counts so a small business fixes forecast gaps before running /reports/pipeline/, while ownership filtering, fetching, saving and rendering stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_forecast_readiness_triage.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only math/re/json/unicodedata standard imports with plain functions and immutable literal module constants and local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object dict; extra keys ignored; None or non-dict raises ValueError. Required key today must be str YYYY-MM-DD with valid calendar month/day including leap-year February else ValueError; missing raises ValueError. Optional key deals defaults to [] when missing; None raises ValueError; non-list raises ValueError; length over 100 raises ValueError. Each deal must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in 1..9007199254740991 else ValueError; missing raises ValueError. Requires stage str one of new, qualified, proposal, won, lost else ValueError; missing raises ValueError. Requires expected_close str YYYY-MM-DD valid calendar or None else ValueError; missing raises ValueError; empty string raises ValueError. Duplicate deal pk raises ValueError. Steps: 1 Validate types without DB, clock, Date read or file I/O. 2 Treat new, qualified, proposal as open and won, lost as closed mirroring Deal Stage. 3 For each open deal with expected_close None place in missing; else lexical compare to today: less means overdue, equal means due_today, greater means upcoming. 4 Closed deals never bucketed. 5 Sort missing_pks, overdue_pks, due_today_pks, upcoming_pks by pk ascending. Returns dict with deal_count, open_count, closed_count, missing_count, overdue_count, due_today_count, upcoming_count ints and missing_pks, overdue_pks, due_today_pks, upcoming_pks lists of ints in pk order. Raises ValueError on malformed types, bounds or duplicates. Preserves inputs without mutation. Caller must pre-filter deals to current account, enforce per-account isolation, handle fetching, saving and rendering and map ValueError to user error; function does no ownership check, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied snapshot linkage only, not proof of validity, execution, coverage, provenance, realized value, conversion or future guarantee. Application and UI integration is outside this change. Distinct from pipeline_forecast_filter which filters by caller start/end inclusive with null kept only when unbounded plus HTML/CSV totals formatting, from pipeline_board_snapshot which groups by stage with values, from task_workload_summary and task_date_filter which bucket/filter tasks by today/status without deals, from deal_task_next_action which returns per-deal next-action detail, from contact_activity_timeline which traverses one contact to deals to tasks, and from gap-triage variants which partition by task coverage; this partitions open deals by forecast presence and lexical today comparison without tasks or values.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "expected_close": null,
+        "pk": 1,
+        "stage": "new",
+        "title": "Padaria"
+      },
+      {
+        "expected_close": "2026-05-10",
+        "pk": 2,
+        "stage": "proposal"
+      },
+      {
+        "expected_close": "2026-05-15",
+        "pk": 3,
+        "stage": "qualified"
+      },
+      {
+        "expected_close": "2026-05-20",
+        "pk": 4,
+        "stage": "proposal"
+      },
+      {
+        "expected_close": "2026-05-01",
+        "pk": 5,
+        "stage": "won"
+      }
+    ],
+    "today": "2026-05-15"
+  },
+  "output": {
+    "closed_count": 1,
+    "deal_count": 5,
+    "due_today_count": 1,
+    "due_today_pks": [
+      3
+    ],
+    "missing_count": 1,
+    "missing_pks": [
+      1
+    ],
+    "open_count": 4,
+    "overdue_count": 1,
+    "overdue_pks": [
+      2
+    ],
+    "upcoming_count": 1,
+    "upcoming_pks": [
+      4
+    ]
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "expected_close": null,
+        "pk": 10,
+        "stage": "lost"
+      },
+      {
+        "expected_close": "2025-12-01",
+        "pk": 11,
+        "stage": "won"
+      }
+    ],
+    "today": "2026-01-10"
+  },
+  "output": {
+    "closed_count": 2,
+    "deal_count": 2,
+    "due_today_count": 0,
+    "due_today_pks": [],
+    "missing_count": 0,
+    "missing_pks": [],
+    "open_count": 0,
+    "overdue_count": 0,
+    "overdue_pks": [],
+    "upcoming_count": 0,
+    "upcoming_pks": []
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [],
+    "extra": "ignored",
+    "today": "2024-02-29"
+  },
+  "output": {
+    "closed_count": 0,
+    "deal_count": 0,
+    "due_today_count": 0,
+    "due_today_pks": [],
+    "missing_count": 0,
+    "missing_pks": [],
+    "open_count": 0,
+    "overdue_count": 0,
+    "overdue_pks": [],
+    "upcoming_count": 0,
+    "upcoming_pks": []
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_forecast_readiness_triage.py`.
