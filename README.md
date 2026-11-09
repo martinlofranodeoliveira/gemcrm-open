@@ -4174,3 +4174,156 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_forecast_readiness_triage.py`.
+
+
+<!-- community-core:task-closed-deal-stale-triage -->
+### Stale task triage for closed deals core
+
+Lets the Portuguese self-hosted CRM find open follow-up tasks still linked to already won or lost opportunities from pure JSON without database reads. It mirrors Task deal FK nullable SET_NULL plus Task completed flag plus Deal five stages with open new qualified proposal versus closed won lost, taking caller-supplied synthetic tasks with deal_pk and deals with stage and returning sorted stale plus open-linked plus unlinked plus unknown plus completed pk buckets with counts so a small business reviews stale reminders before dashboard work while ownership filtering fetching saving and rendering stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_closed_deal_stale_triage.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no IO, env, time, randomness, callbacks or dependencies. Uses only math re json unicodedata standard imports with plain functions and immutable literal module constants and local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object dict; extra keys ignored; None or non-dict raises ValueError. Optional keys tasks and deals default to empty list when missing; None raises ValueError; non-list raises ValueError; length over 100 each raises ValueError. Each task must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in 1 to 9007199254740991 else ValueError; missing raises ValueError. Requires title str length 1 to 180 else ValueError; missing raises ValueError. Requires completed bool exactly else ValueError; missing raises ValueError. Requires deal_pk same int range or None else ValueError; missing raises ValueError. Duplicate task pk raises ValueError. Each deal must be dict else ValueError; extra keys ignored. Requires pk same int range else ValueError; missing raises ValueError. Requires stage str one of new, qualified, proposal, won, lost else ValueError; missing raises ValueError. Duplicate deal pk raises ValueError. Steps: 1 Validate types without DB, clock, Date read or file IO. 2 Treat new, qualified, proposal as open and won, lost as closed mirroring Deal Stage. 3 Build deal stage map by pk. 4 For each task with completed True place in completed_pks; else if deal_pk None place in unlinked_pks; else if deal_pk not in map place in unknown_pks; else if mapped stage closed place in stale_pks else open_linked_pks. 5 Sort all pk lists ascending. Returns dict with task_count, open_count, completed_count, stale_count, open_linked_count, unlinked_count, unknown_count ints and stale_pks, open_linked_pks, unlinked_pks, unknown_pks, completed_pks lists of ints in pk order. Well-formed pk alone never counts; only pk equality plus closed stage counts as stale. Raises ValueError on malformed types, bounds or duplicates. Preserves inputs without mutation. Caller must pre-filter tasks and deals to current account, enforce per-account isolation, handle fetching, saving and rendering and map ValueError to user error; function does no ownership check, DB query, file IO, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied snapshot linkage only, not proof of validity, execution, coverage, provenance, deletion or required action; stale means candidate for review, not error, payment or financial advice. Application and UI integration is outside this change. Distinct from task_date_filter which filters tasks by status today q without deals, from task_workload_summary which buckets tasks by caller today without deals or stages, from deal_forecast_readiness_triage which buckets open deals by forecast dates without tasks, from pipeline_board_snapshot and pipeline_forecast_filter which group filter deals by stage values forecast without task linkage, from deal_task_next_action which returns per-deal next-action detail rather than stale open-task buckets, from contact_activity_timeline which traverses one contact to deals to tasks, from quarantined company-detail-review which collects contacts plus deals for one company without tasks stages, from rejected contact-company-link-triage which partitions contacts by None versus int without stages completed, and from gap-triage variants which partition open deals by task coverage; this partitions open tasks by linked deal stage with completed unlinked unknown separation.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 10,
+        "stage": "won"
+      },
+      {
+        "pk": 11,
+        "stage": "proposal"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "deal_pk": 10,
+        "pk": 1,
+        "title": "Retorno"
+      },
+      {
+        "completed": false,
+        "deal_pk": 11,
+        "pk": 2,
+        "title": "Proposta"
+      },
+      {
+        "completed": false,
+        "deal_pk": null,
+        "pk": 3,
+        "title": "Ligar"
+      },
+      {
+        "completed": true,
+        "deal_pk": 10,
+        "pk": 4,
+        "title": "Feito"
+      }
+    ]
+  },
+  "output": {
+    "completed_count": 1,
+    "completed_pks": [
+      4
+    ],
+    "open_count": 3,
+    "open_linked_count": 1,
+    "open_linked_pks": [
+      2
+    ],
+    "stale_count": 1,
+    "stale_pks": [
+      1
+    ],
+    "task_count": 4,
+    "unknown_count": 0,
+    "unknown_pks": [],
+    "unlinked_count": 1,
+    "unlinked_pks": [
+      3
+    ]
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 10,
+        "stage": "lost"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "deal_pk": 99,
+        "pk": 5,
+        "title": "Cobrar"
+      }
+    ]
+  },
+  "output": {
+    "completed_count": 0,
+    "completed_pks": [],
+    "open_count": 1,
+    "open_linked_count": 0,
+    "open_linked_pks": [],
+    "stale_count": 0,
+    "stale_pks": [],
+    "task_count": 1,
+    "unknown_count": 1,
+    "unknown_pks": [
+      5
+    ],
+    "unlinked_count": 0,
+    "unlinked_pks": []
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "deals": [
+      {
+        "pk": 20,
+        "stage": "lost"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": true,
+        "deal_pk": 20,
+        "pk": 6,
+        "title": "Ok"
+      }
+    ]
+  },
+  "output": {
+    "completed_count": 1,
+    "completed_pks": [
+      6
+    ],
+    "open_count": 0,
+    "open_linked_count": 0,
+    "open_linked_pks": [],
+    "stale_count": 0,
+    "stale_pks": [],
+    "task_count": 1,
+    "unknown_count": 0,
+    "unknown_pks": [],
+    "unlinked_count": 0,
+    "unlinked_pks": []
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_closed_deal_stale_triage.py`.
