@@ -3551,3 +3551,171 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_cross_record_owner_match.py`.
+
+
+<!-- community-core:deal-company-contact-link-check -->
+### Deal company-contact link consistency snapshot core
+
+Lets the Portuguese self-hosted CRM surface mismatched or dangling deal-company-contact links from pure synthetic JSON without database or clock reads, mirroring Company/Contact/Deal nullable SET_NULL foreign keys, so follow-ups use the right company context while ownership filtering, fetching, saving and rendering stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/deal_company_contact_link_check.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only math/re/json/unicodedata standard imports with plain functions and immutable literal module constants and local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Optional keys companies, contacts, deals default to [] when missing; None raises ValueError; non-list raises ValueError; length over 50 each raises ValueError. Each company must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in 1..9007199254740991 else ValueError; missing raises ValueError. Requires name str length 1..180 else ValueError; missing raises ValueError. Duplicate company pk raises ValueError. Each contact must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in range else ValueError; missing raises ValueError. Requires name str 1..180 else ValueError; missing raises ValueError. Requires company_pk int exactly with booleans rejected in range or None else ValueError; missing raises ValueError. Duplicate contact pk raises ValueError. Each deal must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in range else ValueError; missing raises ValueError. Requires title str 1..180 else ValueError; missing raises ValueError. Requires stage str one of new, qualified, proposal, won, lost else ValueError; missing raises ValueError. Requires company_pk int exactly in range or None else ValueError; missing raises ValueError. Requires contact_pk int exactly in range or None else ValueError; missing raises ValueError. Duplicate deal pk raises ValueError. Steps: 1 Validate types without DB, clock, Date, file I/O. 2 Build company pk set and contact map pk to company_pk. 3 For each deal in input order build entry copying pk, title, stage, company_pk, contact_pk plus company_exists true when company_pk is None or in set else false, contact_exists true when contact_pk is None or in map else false, company_match true when contact_pk is None or (contact_exists and deal company_pk equals mapped contact company_pk) else false. 4 Set deal_count, linked_count where contact_pk is not None and contact_exists, mismatched_count where linked and deal company_pk differs from mapped contact company_pk, dangling_company_count where company_pk is not None and missing, dangling_contact_count where contact_pk is not None and missing. Returns dict with deal_count int, linked_count int, mismatched_count int, dangling_company_count int, dangling_contact_count int, deals list in input order. Raises ValueError on malformed types, bounds or duplicates. Preserves inputs without mutation. Caller must pre-filter records to current account, enforce per-account isolation, handle fetching, saving and rendering and map ValueError to user error; function does no ownership check, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied snapshot only, not proof of validity, history, revenue or future guarantee. Application and UI integration is outside this change.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Acme",
+        "pk": 1
+      }
+    ],
+    "contacts": [
+      {
+        "company_pk": 1,
+        "name": "Marina",
+        "pk": 10
+      }
+    ],
+    "deals": [
+      {
+        "company_pk": 1,
+        "contact_pk": 10,
+        "pk": 100,
+        "stage": "new",
+        "title": "Site"
+      }
+    ]
+  },
+  "output": {
+    "dangling_company_count": 0,
+    "dangling_contact_count": 0,
+    "deal_count": 1,
+    "deals": [
+      {
+        "company_exists": true,
+        "company_match": true,
+        "company_pk": 1,
+        "contact_exists": true,
+        "contact_pk": 10,
+        "pk": 100,
+        "stage": "new",
+        "title": "Site"
+      }
+    ],
+    "linked_count": 1,
+    "mismatched_count": 0
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [
+      {
+        "name": "Acme",
+        "pk": 1
+      },
+      {
+        "name": "Beta",
+        "pk": 2
+      }
+    ],
+    "contacts": [
+      {
+        "company_pk": 2,
+        "name": "Ana",
+        "pk": 10
+      }
+    ],
+    "deals": [
+      {
+        "company_pk": 1,
+        "contact_pk": 10,
+        "pk": 100,
+        "stage": "qualified",
+        "title": "Site"
+      },
+      {
+        "company_pk": null,
+        "contact_pk": null,
+        "pk": 101,
+        "stage": "new",
+        "title": "Solo"
+      }
+    ]
+  },
+  "output": {
+    "dangling_company_count": 0,
+    "dangling_contact_count": 0,
+    "deal_count": 2,
+    "deals": [
+      {
+        "company_exists": true,
+        "company_match": false,
+        "company_pk": 1,
+        "contact_exists": true,
+        "contact_pk": 10,
+        "pk": 100,
+        "stage": "qualified",
+        "title": "Site"
+      },
+      {
+        "company_exists": true,
+        "company_match": true,
+        "company_pk": null,
+        "contact_exists": true,
+        "contact_pk": null,
+        "pk": 101,
+        "stage": "new",
+        "title": "Solo"
+      }
+    ],
+    "linked_count": 1,
+    "mismatched_count": 1
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "companies": [],
+    "contacts": [],
+    "deals": [
+      {
+        "company_pk": 9,
+        "contact_pk": 8,
+        "pk": 5,
+        "stage": "proposal",
+        "title": "Orfa"
+      }
+    ]
+  },
+  "output": {
+    "dangling_company_count": 1,
+    "dangling_contact_count": 1,
+    "deal_count": 1,
+    "deals": [
+      {
+        "company_exists": false,
+        "company_match": false,
+        "company_pk": 9,
+        "contact_exists": false,
+        "contact_pk": 8,
+        "pk": 5,
+        "stage": "proposal",
+        "title": "Orfa"
+      }
+    ],
+    "linked_count": 0,
+    "mismatched_count": 0
+  }
+}
+```
+
+Public regression tests: `crm/test_community_deal_company_contact_link_check.py`.
