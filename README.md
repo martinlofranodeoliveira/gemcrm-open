@@ -3719,3 +3719,139 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_deal_company_contact_link_check.py`.
+
+
+<!-- community-core:task-workload-summary -->
+### Follow-up workload summary core
+
+Lets the Portuguese self-hosted CRM triage daily follow-ups from pure JSON without database or clock reads. It mirrors Task due_date plus completed and the documented open/overdue/today/upcoming/completed filters for a caller-supplied today date, returning per-bucket counts plus sorted pk lists, so a small business prioritizes overdue and today work while ownership filtering, fetching, saving and rendering stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/task_workload_summary.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only math/re/json/unicodedata standard imports with plain functions and immutable literal module constants and local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Required key today must be str YYYY-MM-DD with valid calendar month/day including leap-year February else ValueError; missing raises ValueError; lexical comparison only, no clock or Date read. Optional key tasks defaults to [] when missing; None raises ValueError; non-list raises ValueError; length over 200 raises ValueError. Each task must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in 1..9007199254740991 else ValueError; missing raises ValueError. Requires title str length 1..180 else ValueError; missing raises ValueError. Requires due_date str YYYY-MM-DD with valid calendar date else ValueError; missing raises ValueError. Requires completed bool exactly else ValueError; missing raises ValueError. Duplicate pk raises ValueError. Steps: 1 Validate types without DB, clock, Date, file I/O. 2 Partition completed where completed is True, otherwise open; open splits by lexical due_date compare to today into overdue (<), today (=), upcoming (>). 3 Sort each bucket by due_date lexical ascending then pk ascending. 4 Count totals. Returns dict with today str copy, task_count, open_count, overdue_count, today_count, upcoming_count, completed_count ints, overdue_pks, today_pks, upcoming_pks, completed_pks lists of ints in bucket order. Raises ValueError on malformed types, bounds or duplicates. Preserves inputs without mutation. Caller must pre-filter tasks to current account, enforce isolation, handle fetching, saving and rendering and map ValueError to user error; function does no ownership check, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied snapshot only, not proof of validity, history or future guarantee. Application and UI integration is outside this change. Distinct from task_date_filter which returns one filtered record list for a single status, this aggregates all buckets to counts plus pk lists without returning full records; distinct from dashboard_snapshot which mixes opportunities and actions, this covers tasks only; distinct from contact-reachability-triage which partitions by blank email/phone, this partitions by completed flag plus lexical date compare.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-05-10",
+        "pk": 1,
+        "title": "Ligar"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-05-12",
+        "pk": 2,
+        "title": "Visita"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-05-15",
+        "pk": 3,
+        "title": "Proposta"
+      },
+      {
+        "completed": true,
+        "due_date": "2026-05-09",
+        "pk": 4,
+        "title": "Feito"
+      }
+    ],
+    "today": "2026-05-12"
+  },
+  "output": {
+    "completed_count": 1,
+    "completed_pks": [
+      4
+    ],
+    "open_count": 3,
+    "overdue_count": 1,
+    "overdue_pks": [
+      1
+    ],
+    "task_count": 4,
+    "today": "2026-05-12",
+    "today_count": 1,
+    "today_pks": [
+      2
+    ],
+    "upcoming_count": 1,
+    "upcoming_pks": [
+      3
+    ]
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "tasks": [],
+    "today": "2026-01-01"
+  },
+  "output": {
+    "completed_count": 0,
+    "completed_pks": [],
+    "open_count": 0,
+    "overdue_count": 0,
+    "overdue_pks": [],
+    "task_count": 0,
+    "today": "2026-01-01",
+    "today_count": 0,
+    "today_pks": [],
+    "upcoming_count": 0,
+    "upcoming_pks": []
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "tasks": [
+      {
+        "completed": false,
+        "due_date": "2026-05-11",
+        "pk": 10,
+        "title": "B"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-05-10",
+        "pk": 5,
+        "title": "A"
+      },
+      {
+        "completed": false,
+        "due_date": "2026-05-10",
+        "pk": 7,
+        "title": "C"
+      }
+    ],
+    "today": "2026-05-12"
+  },
+  "output": {
+    "completed_count": 0,
+    "completed_pks": [],
+    "open_count": 3,
+    "overdue_count": 3,
+    "overdue_pks": [
+      5,
+      7,
+      10
+    ],
+    "task_count": 3,
+    "today": "2026-05-12",
+    "today_count": 0,
+    "today_pks": [],
+    "upcoming_count": 0,
+    "upcoming_pks": []
+  }
+}
+```
+
+Public regression tests: `crm/test_community_task_workload_summary.py`.
