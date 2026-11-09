@@ -3855,3 +3855,195 @@ Examples (JSON input and expected output):
 ```
 
 Public regression tests: `crm/test_community_task_workload_summary.py`.
+
+
+<!-- community-core:contact-activity-timeline -->
+### Contact activity timeline core
+
+Lets the Portuguese self-hosted CRM review one contact plus its linked opportunities and follow-ups from pure JSON without database or clock reads. It mirrors Contact plus Deal contact FK nullable SET_NULL plus Task deal FK nullable SET_NULL and the ROADMAP activity-history need, taking a synthetic contact with deals and tasks and returning only deals whose contact_pk equals the contact plus only tasks whose deal belongs to those deals, sorted for review, while ownership filtering, fetching, saving and rendering stay with the caller.
+
+Reusable deterministic JSON core: `crm/features/contact_activity_timeline.py`, API `run_feature(payload)`. This module is independently tested; application/UI integration is outside this change.
+
+Exposes run_feature(payload) -> dict as a pure deterministic function with no I/O, env, time, randomness, callbacks or dependencies. Uses only math/re/json/unicodedata standard imports with plain functions and immutable literal module constants and local mutable containers; no decorators, classes, async, generator, global, nonlocal, attribute assignment, deletion, dynamic calls or mutable defaults. Input payload must be an object (dict); extra keys ignored; None or non-dict raises ValueError. Required key contact must be dict else ValueError; extra keys ignored. Requires pk int exactly with booleans rejected in 1..9007199254740991 else ValueError; missing raises ValueError. Requires name str length 1..180 else ValueError; missing raises ValueError. Optional keys deals and tasks default to [] when missing; None raises ValueError; non-list raises ValueError; deals length over 100 raises ValueError; tasks length over 200 raises ValueError. Each deal must be dict else ValueError; extra keys ignored. Requires pk same int range else ValueError; missing raises ValueError. Requires title str 1..180 else ValueError; missing raises ValueError. Requires stage str one of new, qualified, proposal, won, lost else ValueError; missing raises ValueError. Requires contact_pk same int range or None else ValueError; missing raises ValueError. Duplicate deal pk raises ValueError. Each task must be dict else ValueError; extra keys ignored. Requires pk same int range else ValueError; missing raises ValueError. Requires title str 1..180 else ValueError; missing raises ValueError. Requires due_date str YYYY-MM-DD with valid calendar month/day including leap-year February else ValueError; missing raises ValueError; lexical comparison only for sorting, no clock or Date read. Requires completed bool exactly else ValueError; missing raises ValueError. Requires deal_pk same int range or None else ValueError; missing raises ValueError. Duplicate task pk raises ValueError. Steps: 1 Validate types without DB, clock, Date read or file I/O. 2 Select linked_deals where contact_pk equals contact pk sorted by pk ascending. 3 Select linked_tasks where deal_pk is not None and equals one linked deal pk sorted by due_date lexical ascending then pk ascending. 4 Count totals. Returns dict with contact_pk int copy, contact_name str copy, deal_count int, task_count int, linked_deal_count int, linked_task_count int, linked_deals list of copies with pk, title, stage in pk order, linked_tasks list of copies with pk, title, due_date, completed, deal_pk in date-then-pk order. Raises ValueError on malformed types, bounds or duplicates. Preserves inputs without mutation. Caller must pre-filter deals/tasks to current account, enforce per-account isolation, handle fetching, saving and rendering and map ValueError to user error; function does no ownership check, DB query, file I/O, CSV handling, clock read, record creation, merge, update or delete and never mutates inputs. Result reflects supplied snapshot link state only, not proof of validity, history completeness or future guarantee. Application and UI integration is outside this change. Distinct from task_workload_summary which buckets all tasks by caller-supplied today, from dashboard_snapshot which mixes global open opportunities and due actions, from deal_task_next_action which returns next action per deal, from task_date_filter which returns one status-filtered list, from pipeline_board_snapshot and pipeline_forecast_filter which group by stage/totals, from unlinked-record-review which selects null-FK orphans, and from contact-reachability-triage which partitions by blank email/phone; this traverses Contact to Deal contact_pk to Task deal_pk for one contact.
+
+Examples (JSON input and expected output):
+
+```json
+{
+  "input": {
+    "contact": {
+      "name": "Marina",
+      "pk": 1
+    },
+    "deals": [
+      {
+        "contact_pk": 1,
+        "pk": 10,
+        "stage": "new",
+        "title": "Site"
+      },
+      {
+        "contact_pk": 2,
+        "pk": 11,
+        "stage": "won",
+        "title": "Loja"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": false,
+        "deal_pk": 10,
+        "due_date": "2026-02-10",
+        "pk": 5,
+        "title": "Ligar"
+      },
+      {
+        "completed": false,
+        "deal_pk": 11,
+        "due_date": "2026-02-09",
+        "pk": 6,
+        "title": "Visita"
+      }
+    ]
+  },
+  "output": {
+    "contact_name": "Marina",
+    "contact_pk": 1,
+    "deal_count": 2,
+    "linked_deal_count": 1,
+    "linked_deals": [
+      {
+        "pk": 10,
+        "stage": "new",
+        "title": "Site"
+      }
+    ],
+    "linked_task_count": 1,
+    "linked_tasks": [
+      {
+        "completed": false,
+        "deal_pk": 10,
+        "due_date": "2026-02-10",
+        "pk": 5,
+        "title": "Ligar"
+      }
+    ],
+    "task_count": 2
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contact": {
+      "name": "Jo",
+      "pk": 2
+    },
+    "deals": [],
+    "tasks": []
+  },
+  "output": {
+    "contact_name": "Jo",
+    "contact_pk": 2,
+    "deal_count": 0,
+    "linked_deal_count": 0,
+    "linked_deals": [],
+    "linked_task_count": 0,
+    "linked_tasks": [],
+    "task_count": 0
+  }
+}
+```
+
+```json
+{
+  "input": {
+    "contact": {
+      "name": "Ana",
+      "pk": 3
+    },
+    "deals": [
+      {
+        "contact_pk": 3,
+        "pk": 20,
+        "stage": "proposal",
+        "title": "B"
+      },
+      {
+        "contact_pk": 3,
+        "pk": 10,
+        "stage": "qualified",
+        "title": "A"
+      },
+      {
+        "contact_pk": null,
+        "pk": 30,
+        "stage": "new",
+        "title": "C"
+      }
+    ],
+    "tasks": [
+      {
+        "completed": true,
+        "deal_pk": 10,
+        "due_date": "2026-03-02",
+        "pk": 8,
+        "title": "T2"
+      },
+      {
+        "completed": false,
+        "deal_pk": 10,
+        "due_date": "2026-03-01",
+        "pk": 7,
+        "title": "T1"
+      },
+      {
+        "completed": false,
+        "deal_pk": 30,
+        "due_date": "2026-03-01",
+        "pk": 9,
+        "title": "T3"
+      }
+    ]
+  },
+  "output": {
+    "contact_name": "Ana",
+    "contact_pk": 3,
+    "deal_count": 3,
+    "linked_deal_count": 2,
+    "linked_deals": [
+      {
+        "pk": 10,
+        "stage": "qualified",
+        "title": "A"
+      },
+      {
+        "pk": 20,
+        "stage": "proposal",
+        "title": "B"
+      }
+    ],
+    "linked_task_count": 2,
+    "linked_tasks": [
+      {
+        "completed": false,
+        "deal_pk": 10,
+        "due_date": "2026-03-01",
+        "pk": 7,
+        "title": "T1"
+      },
+      {
+        "completed": true,
+        "deal_pk": 10,
+        "due_date": "2026-03-02",
+        "pk": 8,
+        "title": "T2"
+      }
+    ],
+    "task_count": 3
+  }
+}
+```
+
+Public regression tests: `crm/test_community_contact_activity_timeline.py`.
